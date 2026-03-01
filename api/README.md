@@ -1,0 +1,1 @@
+Protocols related to the API of the application.
