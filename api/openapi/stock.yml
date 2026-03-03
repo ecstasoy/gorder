@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: stock service
+  description: stock service
+  version: 1.0.0
+servers:
+    - url: "http://{hostname}/api"
+      variables:
+        hostname:
+          default: 127.0.0.1
+
+paths:
+  /items:
+    post:
+      description: "get items by IDs"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetItemsRequest'
+      
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetItemsResponse'
+        
+        default:
+          description: "unexpected error"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /items/check:
+    post:
+      description: "check if items are in stock"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckIfItemsInStockRequest'
+      
+      responses:
+        '200':
+          description: "OK"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckIfItemsInStockResponse'
+        
+        default:
+          description: "unexpected error"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        quantity:
+          type: integer
+          format: int32
+        priceID:
+          type: string
+    
+    ItemWithQuantity:
+      type: object
+      properties:
+        id:
+          type: string
+        quantity:
+          type: integer
+          format: int32
+    
+    GetItemsRequest:
+      type: object
+      properties:
+        itemIDs:
+          type: array
+          items:
+            type: string
+    
+    GetItemsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+    
+    CheckIfItemsInStockRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemWithQuantity'
+    
+    CheckIfItemsInStockResponse:
+      type: object
+      properties:
+        inStock:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+    
+    Error:
+      type: object
+      properties:
+        message:
+          type: string

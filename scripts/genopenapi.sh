@@ -50,5 +50,6 @@ function gen() {
 }
 
 gen internal/order/ports ports order
+gen internal/stock/ports ports stock
 
 log_success "openapi generate success!"

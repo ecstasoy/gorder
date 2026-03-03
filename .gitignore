@@ -26,6 +26,11 @@ go.work.sum
 
 # env file
 .env
+.idea
+.gobincache
+.DS_Store
+**/tmp/
+**/bin/
 
 # Editor/IDE
  .idea/
