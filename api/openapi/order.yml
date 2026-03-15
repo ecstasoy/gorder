@@ -75,6 +75,19 @@ paths:
 
 components:
   schemas:
+    OrderStatus:
+      type: string
+      enum:
+        - ORDER_STATUS_UNSPECIFIED
+        - ORDER_STATUS_PENDING
+        - ORDER_STATUS_PAID
+        - ORDER_STATUS_PREPARING
+        - ORDER_STATUS_READY
+        - ORDER_STATUS_DELIVERING
+        - ORDER_STATUS_DELIVERED
+        - ORDER_STATUS_CANCELLED
+      description: "订单状态"
+    
     Order:
       type: object
       properties:
@@ -83,13 +96,14 @@ components:
         customerID:
           type: string
         status:
-          type: integer
+          $ref: '#/components/schemas/OrderStatus'
         items:
           type: array
           items:
             $ref: '#/components/schemas/Item'
         paymentLink:
           type: string
+          description: "支付链接"
 
     Item:
       type: object

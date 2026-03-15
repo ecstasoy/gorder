@@ -15,11 +15,11 @@ type GetCustomerOrder struct {
 
 type GetCustomerOrderHandler decorator.QueryHandler[GetCustomerOrder, *domain.Order]
 
-type getCusromerOrderHandler struct {
+type getCustomerOrderHandler struct {
 	orderRepo domain.Repository
 }
 
-func (g getCusromerOrderHandler) Handle(ctx context.Context, query GetCustomerOrder) (*domain.Order, error) {
+func (g getCustomerOrderHandler) Handle(ctx context.Context, query GetCustomerOrder) (*domain.Order, error) {
 	o, err := g.orderRepo.Get(ctx, query.OrderID, query.CustomerID)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func NewGetCustomerOrderHandler(
 	}
 
 	return decorator.ApplyQueryDecorators[GetCustomerOrder, *domain.Order](
-		getCusromerOrderHandler{orderRepo: orderRepo},
+		getCustomerOrderHandler{orderRepo: orderRepo},
 		logger,
 		metricsClient,
 	)

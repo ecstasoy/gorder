@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
 	"github.com/sirupsen/logrus"
 )
@@ -22,7 +23,7 @@ func NewMemoryOrderRepository() *MemoryOrderRepository {
 	s = append(s, &domain.Order{
 		ID:          "foo_ID",
 		CustomerID:  "foo_customer_ID",
-		Status:      "foo_status",
+		Status:      orderpb.OrderStatus_ORDER_STATUS_PENDING,
 		PaymentLink: "foo_payment_link",
 		Items:       nil,
 	})
@@ -32,7 +33,7 @@ func NewMemoryOrderRepository() *MemoryOrderRepository {
 	}
 }
 
-func (m MemoryOrderRepository) Create(_ context.Context, order *domain.Order) (*domain.Order, error) {
+func (m *MemoryOrderRepository) Create(_ context.Context, order *domain.Order) (*domain.Order, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -53,7 +54,7 @@ func (m MemoryOrderRepository) Create(_ context.Context, order *domain.Order) (*
 	return res, nil
 }
 
-func (m MemoryOrderRepository) Get(_ context.Context, id, customerID string) (*domain.Order, error) {
+func (m *MemoryOrderRepository) Get(_ context.Context, id, customerID string) (*domain.Order, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
@@ -70,7 +71,7 @@ func (m MemoryOrderRepository) Get(_ context.Context, id, customerID string) (*d
 	return nil, &domain.NotFoundError{OrderID: id}
 }
 
-func (m MemoryOrderRepository) Update(ctx context.Context, order *domain.Order, updateFunc func(context.Context, *domain.Order) (*domain.Order, error)) error {
+func (m *MemoryOrderRepository) Update(ctx context.Context, order *domain.Order, updateFunc func(context.Context, *domain.Order) (*domain.Order, error)) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -96,20 +97,6 @@ func (m MemoryOrderRepository) Update(ctx context.Context, order *domain.Order, 
 	if !found {
 		return &domain.NotFoundError{OrderID: order.ID}
 	}
-
-	res := &domain.Order{
-		ID:          strconv.FormatInt(time.Now().UnixNano(), 10),
-		CustomerID:  order.CustomerID,
-		Status:      order.Status,
-		PaymentLink: order.PaymentLink,
-		Items:       order.Items,
-	}
-	m.store = append(m.store, res)
-
-	logrus.WithFields(logrus.Fields{
-		"order_id":           res.ID,
-		"store_after_create": m.store,
-	}).Debug("order created in memory repository")
 
 	return nil
 }

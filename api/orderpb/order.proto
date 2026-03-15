@@ -11,6 +11,18 @@ service OrderService {
   rpc UpdateOrder(Order) returns (google.protobuf.Empty);
 }
 
+// OrderStatus 定义订单状态枚举
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;  // 未指定
+  ORDER_STATUS_PENDING = 1;       // 待处理
+  ORDER_STATUS_PAID = 2;          // 已支付
+  ORDER_STATUS_PREPARING = 3;     // 准备中
+  ORDER_STATUS_READY = 4;         // 准备完成
+  ORDER_STATUS_DELIVERING = 5;    // 配送中
+  ORDER_STATUS_DELIVERED = 6;     // 已送达
+  ORDER_STATUS_CANCELLED = 7;     // 已取消
+}
+
 message CreateOrderRequest {
   string CustomerID = 1;
   repeated ItemWithQuantity Items = 2;
@@ -36,6 +48,7 @@ message Item {
 message Order {
   string ID = 1;
   string CustomerID = 2;
-  string Status = 3;
+  OrderStatus Status = 3;
   repeated Item Items = 4;
+  string PaymentLink = 5;
 }

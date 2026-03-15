@@ -2,6 +2,7 @@ package stock
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 )
@@ -15,5 +16,5 @@ type NotFoundError struct {
 }
 
 func (e NotFoundError) Error() string {
-	return "items not found: " + string(e.Missing[0])
+	return "items not found: " + strings.Join(e.Missing, ", ")
 }

@@ -22,6 +22,71 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// OrderStatus 定义订单状态枚举
+type OrderStatus int32
+
+const (
+	OrderStatus_ORDER_STATUS_UNSPECIFIED OrderStatus = 0 // 未指定
+	OrderStatus_ORDER_STATUS_PENDING     OrderStatus = 1 // 待处理
+	OrderStatus_ORDER_STATUS_PAID        OrderStatus = 2 // 已支付
+	OrderStatus_ORDER_STATUS_PREPARING   OrderStatus = 3 // 准备中
+	OrderStatus_ORDER_STATUS_READY       OrderStatus = 4 // 准备完成
+	OrderStatus_ORDER_STATUS_DELIVERING  OrderStatus = 5 // 配送中
+	OrderStatus_ORDER_STATUS_DELIVERED   OrderStatus = 6 // 已送达
+	OrderStatus_ORDER_STATUS_CANCELLED   OrderStatus = 7 // 已取消
+)
+
+// Enum value maps for OrderStatus.
+var (
+	OrderStatus_name = map[int32]string{
+		0: "ORDER_STATUS_UNSPECIFIED",
+		1: "ORDER_STATUS_PENDING",
+		2: "ORDER_STATUS_PAID",
+		3: "ORDER_STATUS_PREPARING",
+		4: "ORDER_STATUS_READY",
+		5: "ORDER_STATUS_DELIVERING",
+		6: "ORDER_STATUS_DELIVERED",
+		7: "ORDER_STATUS_CANCELLED",
+	}
+	OrderStatus_value = map[string]int32{
+		"ORDER_STATUS_UNSPECIFIED": 0,
+		"ORDER_STATUS_PENDING":     1,
+		"ORDER_STATUS_PAID":        2,
+		"ORDER_STATUS_PREPARING":   3,
+		"ORDER_STATUS_READY":       4,
+		"ORDER_STATUS_DELIVERING":  5,
+		"ORDER_STATUS_DELIVERED":   6,
+		"ORDER_STATUS_CANCELLED":   7,
+	}
+)
+
+func (x OrderStatus) Enum() *OrderStatus {
+	p := new(OrderStatus)
+	*p = x
+	return p
+}
+
+func (x OrderStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (OrderStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_orderpb_order_proto_enumTypes[0].Descriptor()
+}
+
+func (OrderStatus) Type() protoreflect.EnumType {
+	return &file_orderpb_order_proto_enumTypes[0]
+}
+
+func (x OrderStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use OrderStatus.Descriptor instead.
+func (OrderStatus) EnumDescriptor() ([]byte, []int) {
+	return file_orderpb_order_proto_rawDescGZIP(), []int{0}
+}
+
 type CreateOrderRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CustomerID    string                 `protobuf:"bytes,1,opt,name=CustomerID,proto3" json:"CustomerID,omitempty"`
@@ -250,8 +315,9 @@ type Order struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ID            string                 `protobuf:"bytes,1,opt,name=ID,proto3" json:"ID,omitempty"`
 	CustomerID    string                 `protobuf:"bytes,2,opt,name=CustomerID,proto3" json:"CustomerID,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=Status,proto3" json:"Status,omitempty"`
+	Status        OrderStatus            `protobuf:"varint,3,opt,name=Status,proto3,enum=orderpb.OrderStatus" json:"Status,omitempty"`
 	Items         []*Item                `protobuf:"bytes,4,rep,name=Items,proto3" json:"Items,omitempty"`
+	PaymentLink   string                 `protobuf:"bytes,5,opt,name=PaymentLink,proto3" json:"PaymentLink,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -300,11 +366,11 @@ func (x *Order) GetCustomerID() string {
 	return ""
 }
 
-func (x *Order) GetStatus() string {
+func (x *Order) GetStatus() OrderStatus {
 	if x != nil {
 		return x.Status
 	}
-	return ""
+	return OrderStatus_ORDER_STATUS_UNSPECIFIED
 }
 
 func (x *Order) GetItems() []*Item {
@@ -312,6 +378,13 @@ func (x *Order) GetItems() []*Item {
 		return x.Items
 	}
 	return nil
+}
+
+func (x *Order) GetPaymentLink() string {
+	if x != nil {
+		return x.PaymentLink
+	}
+	return ""
 }
 
 var File_orderpb_order_proto protoreflect.FileDescriptor
@@ -336,14 +409,24 @@ const file_orderpb_order_proto_rawDesc = "" +
 	"\x02ID\x18\x01 \x01(\tR\x02ID\x12\x12\n" +
 	"\x04Name\x18\x02 \x01(\tR\x04Name\x12\x1a\n" +
 	"\bQuantity\x18\x03 \x01(\x05R\bQuantity\x12\x18\n" +
-	"\aPriceID\x18\x04 \x01(\tR\aPriceID\"t\n" +
+	"\aPriceID\x18\x04 \x01(\tR\aPriceID\"\xac\x01\n" +
 	"\x05Order\x12\x0e\n" +
 	"\x02ID\x18\x01 \x01(\tR\x02ID\x12\x1e\n" +
 	"\n" +
 	"CustomerID\x18\x02 \x01(\tR\n" +
-	"CustomerID\x12\x16\n" +
-	"\x06Status\x18\x03 \x01(\tR\x06Status\x12#\n" +
-	"\x05Items\x18\x04 \x03(\v2\r.orderpb.ItemR\x05Items2\xbf\x01\n" +
+	"CustomerID\x12,\n" +
+	"\x06Status\x18\x03 \x01(\x0e2\x14.orderpb.OrderStatusR\x06Status\x12#\n" +
+	"\x05Items\x18\x04 \x03(\v2\r.orderpb.ItemR\x05Items\x12 \n" +
+	"\vPaymentLink\x18\x05 \x01(\tR\vPaymentLink*\xe5\x01\n" +
+	"\vOrderStatus\x12\x1c\n" +
+	"\x18ORDER_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14ORDER_STATUS_PENDING\x10\x01\x12\x15\n" +
+	"\x11ORDER_STATUS_PAID\x10\x02\x12\x1a\n" +
+	"\x16ORDER_STATUS_PREPARING\x10\x03\x12\x16\n" +
+	"\x12ORDER_STATUS_READY\x10\x04\x12\x1b\n" +
+	"\x17ORDER_STATUS_DELIVERING\x10\x05\x12\x1a\n" +
+	"\x16ORDER_STATUS_DELIVERED\x10\x06\x12\x1a\n" +
+	"\x16ORDER_STATUS_CANCELLED\x10\a2\xbf\x01\n" +
 	"\fOrderService\x12B\n" +
 	"\vCreateOrder\x12\x1b.orderpb.CreateOrderRequest\x1a\x16.google.protobuf.Empty\x124\n" +
 	"\bGetOrder\x12\x18.orderpb.GetOrderRequest\x1a\x0e.orderpb.Order\x125\n" +
@@ -361,29 +444,32 @@ func file_orderpb_order_proto_rawDescGZIP() []byte {
 	return file_orderpb_order_proto_rawDescData
 }
 
+var file_orderpb_order_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_orderpb_order_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_orderpb_order_proto_goTypes = []any{
-	(*CreateOrderRequest)(nil), // 0: orderpb.CreateOrderRequest
-	(*GetOrderRequest)(nil),    // 1: orderpb.GetOrderRequest
-	(*ItemWithQuantity)(nil),   // 2: orderpb.ItemWithQuantity
-	(*Item)(nil),               // 3: orderpb.Item
-	(*Order)(nil),              // 4: orderpb.Order
-	(*emptypb.Empty)(nil),      // 5: google.protobuf.Empty
+	(OrderStatus)(0),           // 0: orderpb.OrderStatus
+	(*CreateOrderRequest)(nil), // 1: orderpb.CreateOrderRequest
+	(*GetOrderRequest)(nil),    // 2: orderpb.GetOrderRequest
+	(*ItemWithQuantity)(nil),   // 3: orderpb.ItemWithQuantity
+	(*Item)(nil),               // 4: orderpb.Item
+	(*Order)(nil),              // 5: orderpb.Order
+	(*emptypb.Empty)(nil),      // 6: google.protobuf.Empty
 }
 var file_orderpb_order_proto_depIdxs = []int32{
-	2, // 0: orderpb.CreateOrderRequest.Items:type_name -> orderpb.ItemWithQuantity
-	3, // 1: orderpb.Order.Items:type_name -> orderpb.Item
-	0, // 2: orderpb.OrderService.CreateOrder:input_type -> orderpb.CreateOrderRequest
-	1, // 3: orderpb.OrderService.GetOrder:input_type -> orderpb.GetOrderRequest
-	4, // 4: orderpb.OrderService.UpdateOrder:input_type -> orderpb.Order
-	5, // 5: orderpb.OrderService.CreateOrder:output_type -> google.protobuf.Empty
-	4, // 6: orderpb.OrderService.GetOrder:output_type -> orderpb.Order
-	5, // 7: orderpb.OrderService.UpdateOrder:output_type -> google.protobuf.Empty
-	5, // [5:8] is the sub-list for method output_type
-	2, // [2:5] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 0: orderpb.CreateOrderRequest.Items:type_name -> orderpb.ItemWithQuantity
+	0, // 1: orderpb.Order.Status:type_name -> orderpb.OrderStatus
+	4, // 2: orderpb.Order.Items:type_name -> orderpb.Item
+	1, // 3: orderpb.OrderService.CreateOrder:input_type -> orderpb.CreateOrderRequest
+	2, // 4: orderpb.OrderService.GetOrder:input_type -> orderpb.GetOrderRequest
+	5, // 5: orderpb.OrderService.UpdateOrder:input_type -> orderpb.Order
+	6, // 6: orderpb.OrderService.CreateOrder:output_type -> google.protobuf.Empty
+	5, // 7: orderpb.OrderService.GetOrder:output_type -> orderpb.Order
+	6, // 8: orderpb.OrderService.UpdateOrder:output_type -> google.protobuf.Empty
+	6, // [6:9] is the sub-list for method output_type
+	3, // [3:6] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_orderpb_order_proto_init() }
@@ -396,13 +482,14 @@ func file_orderpb_order_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orderpb_order_proto_rawDesc), len(file_orderpb_order_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_orderpb_order_proto_goTypes,
 		DependencyIndexes: file_orderpb_order_proto_depIdxs,
+		EnumInfos:         file_orderpb_order_proto_enumTypes,
 		MessageInfos:      file_orderpb_order_proto_msgTypes,
 	}.Build()
 	File_orderpb_order_proto = out.File
