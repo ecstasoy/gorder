@@ -2,12 +2,15 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
+	"github.com/ecstasoy/gorder/common/broker"
 	"github.com/ecstasoy/gorder/common/decorator"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/order/app/query"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
 )
 
@@ -25,26 +28,37 @@ type CreateOrderHandler decorator.CommandHandler[CreateOrder, *CreateOrderResult
 type createOrderHandler struct {
 	orderRepo domain.Repository
 	stockGRPC query.StockService
+	channel   *amqp.Channel
 }
 
 func NewCreateOrderHandler(
 	orderRepo domain.Repository,
 	stockGRPC query.StockService,
+	channel *amqp.Channel,
 	logger *logrus.Entry,
 	metricsClient decorator.MetricsClient,
 ) CreateOrderHandler {
 	if orderRepo == nil {
 		panic("orderRepo cannot be nil")
 	}
+	if stockGRPC == nil {
+		panic("stockGRPC cannot be nil")
+	}
+	if channel == nil {
+		panic("channel cannot be nil")
+	}
 	return decorator.ApplyCommandDecorators[CreateOrder, *CreateOrderResult](
-		createOrderHandler{orderRepo: orderRepo, stockGRPC: stockGRPC},
+		createOrderHandler{
+			orderRepo: orderRepo,
+			stockGRPC: stockGRPC,
+			channel:   channel,
+		},
 		logger,
 		metricsClient,
 	)
 }
 
 func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*CreateOrderResult, error) {
-	// TODO: call stock service to get items.
 	validItems, err := c.validate(ctx, cmd.Items)
 	if err != nil {
 		return nil, err
@@ -54,6 +68,24 @@ func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*Creat
 		Items:      validItems,
 	})
 
+	if err != nil {
+		return nil, err
+	}
+
+	q, err := c.channel.QueueDeclare(broker.EventOrderCreated, true, false, false, false, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	marshallOrder, err := json.Marshal(o)
+	if err != nil {
+		return nil, err
+	}
+	err = c.channel.PublishWithContext(ctx, "", q.Name, false, false, amqp.Publishing{
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Body:         marshallOrder,
+	})
 	if err != nil {
 		return nil, err
 	}
