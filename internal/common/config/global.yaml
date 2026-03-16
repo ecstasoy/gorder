@@ -10,4 +10,12 @@ stock:
   http-addr: 127.0.0.1:9091
   grpc-addr: 127.0.0.1:5003
 
+payment:
+    service-name: payment
+    server-to-run: http
+    http-addr: 127.0.0.1:9092
+    grpc-addr: 127.0.0.1:5004
+
 fallback-grpc-addr: 127.0.0.1:5060
+
+stripe-key: "${STRIPE_KEY}"

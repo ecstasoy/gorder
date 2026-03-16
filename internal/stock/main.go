@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/ecstasoy/gorder/common/config"
+	"github.com/ecstasoy/gorder/common/discovery"
 	"github.com/ecstasoy/gorder/common/genproto/stockpb"
+	"github.com/ecstasoy/gorder/common/logging"
 	"github.com/ecstasoy/gorder/common/server"
 	"github.com/ecstasoy/gorder/stock/ports"
 	"github.com/ecstasoy/gorder/stock/service"
@@ -15,6 +17,7 @@ import (
 )
 
 func init() {
+	logging.Init()
 	if err := config.NewViperConfig(); err != nil {
 		logrus.Fatal(err)
 	}
@@ -28,6 +31,16 @@ func main() {
 	defer cancel()
 
 	application := service.NewApplication(ctx)
+
+	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
+
+	if err != nil {
+		logrus.Fatalf("failed to register to consul: %v", err)
+	}
+	defer func() {
+		_ = deregisterFunc()
+	}()
+
 	switch serverType {
 	case "grpc":
 		server.RunGRPCServer(serviceName, func(server *grpc.Server) {
