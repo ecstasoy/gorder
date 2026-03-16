@@ -2,9 +2,11 @@ package command
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ecstasoy/gorder/common/decorator"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
+	"github.com/ecstasoy/gorder/order/app/query"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
 	"github.com/sirupsen/logrus"
 )
@@ -22,10 +24,12 @@ type CreateOrderHandler decorator.CommandHandler[CreateOrder, *CreateOrderResult
 
 type createOrderHandler struct {
 	orderRepo domain.Repository
+	stockGRPC query.StockService
 }
 
 func NewCreateOrderHandler(
 	orderRepo domain.Repository,
+	stockGRPC query.StockService,
 	logger *logrus.Entry,
 	metricsClient decorator.MetricsClient,
 ) CreateOrderHandler {
@@ -33,7 +37,7 @@ func NewCreateOrderHandler(
 		panic("orderRepo cannot be nil")
 	}
 	return decorator.ApplyCommandDecorators[CreateOrder, *CreateOrderResult](
-		createOrderHandler{orderRepo: orderRepo},
+		createOrderHandler{orderRepo: orderRepo, stockGRPC: stockGRPC},
 		logger,
 		metricsClient,
 	)
@@ -41,18 +45,13 @@ func NewCreateOrderHandler(
 
 func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*CreateOrderResult, error) {
 	// TODO: call stock service to get items.
-
-	var stockResponse []*orderpb.Item
-	for _, item := range cmd.Items {
-		stockResponse = append(stockResponse, &orderpb.Item{
-			ID:       item.ItemID,
-			Quantity: item.Quantity,
-		})
+	validItems, err := c.validate(ctx, cmd.Items)
+	if err != nil {
+		return nil, err
 	}
-
 	o, err := c.orderRepo.Create(ctx, &domain.Order{
 		CustomerID: cmd.CustomerID,
-		Items:      stockResponse,
+		Items:      validItems,
 	})
 
 	if err != nil {
@@ -60,4 +59,31 @@ func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*Creat
 	}
 
 	return &CreateOrderResult{OrderID: o.ID}, nil
+}
+
+func (c createOrderHandler) validate(ctx context.Context, items []*orderpb.ItemWithQuantity) ([]*orderpb.Item, error) {
+	if len(items) == 0 {
+		return nil, errors.New("no items provided")
+	}
+	items = packItems(items)
+	resp, err := c.stockGRPC.CheckIfItemsInStock(ctx, items)
+	if err != nil {
+		return nil, err
+	}
+	return resp.Items, nil
+}
+
+func packItems(items []*orderpb.ItemWithQuantity) []*orderpb.ItemWithQuantity {
+	merged := make(map[string]int32)
+	for _, item := range items {
+		merged[item.ItemID] += item.Quantity
+	}
+	var res []*orderpb.ItemWithQuantity
+	for id, quantity := range merged {
+		res = append(res, &orderpb.ItemWithQuantity{
+			ItemID:   id,
+			Quantity: quantity,
+		})
+	}
+	return res
 }

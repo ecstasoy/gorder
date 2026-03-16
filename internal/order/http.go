@@ -7,6 +7,7 @@ import (
 	"github.com/ecstasoy/gorder/order/app"
 	"github.com/ecstasoy/gorder/order/app/command"
 	"github.com/ecstasoy/gorder/order/app/query"
+	"github.com/ecstasoy/gorder/order/ports"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,16 +16,26 @@ type HTTPServer struct {
 }
 
 func (H HTTPServer) PostCustomerCustomerIDOrders(c *gin.Context, customerID string) {
-	var req orderpb.CreateOrderRequest
+	var req ports.CreateOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
+
+	items := make([]*orderpb.ItemWithQuantity, 0, len(req.Items))
+	for _, item := range req.Items {
+		items = append(items, &orderpb.ItemWithQuantity{
+			ItemID:   *item.Id,
+			Quantity: *item.Quantity,
+		})
+	}
+
 	r, err := H.app.Commands.CreateOrder.Handle(c, command.CreateOrder{
 		CustomerID: req.CustomerID,
-		Items:      req.Items,
+		Items:      items,
 	})
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "success", "customer_id": req.CustomerID, "order_id": r.OrderID})

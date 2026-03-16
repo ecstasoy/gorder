@@ -47,9 +47,9 @@ func (m *MemoryOrderRepository) Create(_ context.Context, order *domain.Order) (
 	m.store = append(m.store, res)
 
 	logrus.WithFields(logrus.Fields{
-		"order_id":           res.ID,
+		"order":              res,
 		"store_after_create": m.store,
-	}).Debug("order created in memory repository")
+	}).Info("order created in memory repository")
 
 	return res, nil
 }
