@@ -3,7 +3,9 @@ package client
 import (
 	"context"
 
+	"github.com/ecstasoy/gorder/common/discovery"
 	"github.com/ecstasoy/gorder/common/genproto/stockpb"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
@@ -11,9 +13,12 @@ import (
 )
 
 func NewStockGRPCClient(ctx context.Context) (client stockpb.StockServiceClient, close func() error, err error) {
-	grpcAddr := viper.Sub("stock").GetString("grpc-addr")
+	grpcAddr, err := discovery.GetServiceAddr(ctx, viper.GetString("stock.service-name"))
+	if err != nil {
+		return nil, func() error { return nil }, err
+	}
 	if grpcAddr == "" {
-		grpcAddr = viper.GetString("fallback-grpc-addr")
+		logrus.Warn("no stock grpc address found")
 	}
 	opts, err := grpcDialOpts(grpcAddr)
 	if err != nil {

@@ -2,6 +2,8 @@ package discovery
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/ecstasoy/gorder/common/discovery/consul"
@@ -46,4 +48,21 @@ func RegisterToConsul(ctx context.Context, serviceName string) (func() error, er
 	return func() error {
 		return registry.Deregister(ctx, instanceID, serviceName)
 	}, nil
+}
+
+func GetServiceAddr(ctx context.Context, serviceName string) (string, error) {
+	registry, err := consul.New(viper.GetString("consul.addr"))
+	if err != nil {
+		return "", err
+	}
+	addrs, err := registry.Discover(ctx, serviceName)
+	if err != nil {
+		return "", err
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("service %s not found", serviceName)
+	}
+	i := rand.Intn(len(addrs))
+	logrus.Infof("discovered %d instances for service %s, selected instance: %s", len(addrs), serviceName, addrs[i])
+	return addrs[i], nil
 }
