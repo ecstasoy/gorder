@@ -74,12 +74,11 @@ func (m *MemoryOrderRepository) Get(_ context.Context, id, customerID string) (*
 func (m *MemoryOrderRepository) Update(ctx context.Context, order *domain.Order, updateFunc func(context.Context, *domain.Order) (*domain.Order, error)) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-
 	found := false
 	for i, o := range m.store {
 		if o.ID == order.ID && o.CustomerID == order.CustomerID {
 			found = true
-			updateOrder, err := updateFunc(ctx, o)
+			updateOrder, err := updateFunc(ctx, order)
 			if err != nil {
 				return err
 			}

@@ -4,11 +4,13 @@ import (
 	"context"
 	"log"
 
+	"github.com/ecstasoy/gorder/common/broker"
 	"github.com/ecstasoy/gorder/common/config"
 	"github.com/ecstasoy/gorder/common/discovery"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/common/logging"
 	"github.com/ecstasoy/gorder/common/server"
+	"github.com/ecstasoy/gorder/order/infra/consumer"
 	"github.com/ecstasoy/gorder/order/ports"
 	"github.com/ecstasoy/gorder/order/service"
 	"github.com/gin-gonic/gin"
@@ -33,6 +35,19 @@ func main() {
 	application, cleanup := service.NewApplication(ctx)
 	defer cleanup()
 
+	ch, closeCh := broker.Connect(
+		viper.GetString("rabbitmq.user"),
+		viper.GetString("rabbitmq.password"),
+		viper.GetString("rabbitmq.host"),
+		viper.GetString("rabbitmq.port"),
+	)
+	defer func() {
+		_ = closeCh()
+		_ = ch.Close()
+	}()
+
+	go consumer.NewConsumer(application).Listen(ch)
+
 	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
 
 	if err != nil {
@@ -47,6 +62,7 @@ func main() {
 	})
 
 	server.RunHTTPServer(serviceName, func(router *gin.Engine) {
+		router.StaticFile("/payment/success", "../../public/success.html")
 		ports.RegisterHandlersWithOptions(router, HTTPServer{
 			app: application,
 		}, ports.GinServerOptions{

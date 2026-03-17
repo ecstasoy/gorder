@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
@@ -38,7 +39,14 @@ func (H HTTPServer) PostCustomerCustomerIDOrders(c *gin.Context, customerID stri
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "success", "customer_id": req.CustomerID, "order_id": r.OrderID})
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "success",
+		"customer_id": req.CustomerID,
+		"order_id":    r.OrderID,
+		"redirect_url": fmt.Sprintf("%s?customerID=%s&orderID=%s", "http://localhost:9090/payment/success",
+			req.CustomerID,
+			r.OrderID),
+	})
 }
 
 func (H HTTPServer) GetCustomerCustomerIDOrdersOrderID(c *gin.Context, customerID string, orderID string) {
@@ -51,5 +59,10 @@ func (H HTTPServer) GetCustomerCustomerIDOrdersOrderID(c *gin.Context, customerI
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "success", "order": o})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "success",
+		"data": gin.H{
+			"order": o,
+		},
+	})
 }

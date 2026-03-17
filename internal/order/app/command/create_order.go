@@ -66,6 +66,7 @@ func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*Creat
 	o, err := c.orderRepo.Create(ctx, &domain.Order{
 		CustomerID: cmd.CustomerID,
 		Items:      validItems,
+		Status:     orderpb.OrderStatus_ORDER_STATUS_PENDING,
 	})
 
 	if err != nil {
