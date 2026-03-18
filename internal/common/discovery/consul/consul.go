@@ -25,7 +25,7 @@ func New(consulAddr string) (*Registry, error) {
 	once.Do(func() {
 		config := api.DefaultConfig()
 		config.Address = consulAddr
-		client, err := api.NewClient(api.DefaultConfig())
+		client, err := api.NewClient(config)
 		if err != nil {
 			initErr = err
 			return
