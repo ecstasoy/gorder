@@ -11,6 +11,7 @@ import (
 	domain "github.com/ecstasoy/gorder/order/domain/order"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel"
 )
 
 type Consumer struct {
@@ -44,26 +45,39 @@ func (c *Consumer) Listen(ch *amqp.Channel) {
 	var forever chan struct{}
 	go func() {
 		for msg := range msgs {
-			c.handleMessage(msg)
+			c.handleMessage(ch, msg, q)
 		}
 	}()
 
 	<-forever
 }
 
-func (c *Consumer) handleMessage(msg amqp.Delivery) {
+func (c *Consumer) handleMessage(ch *amqp.Channel, msg amqp.Delivery, q amqp.Queue) {
 	logrus.Infof("Order received paid message: %s from %s", string(msg.Body), msg.Exchange)
+
+	ctx := broker.ExtractRabbitMQHeaders(context.Background(), msg.Headers)
+	t := otel.Tracer("rabbitmq")
+	_, span := t.Start(ctx, fmt.Sprintf("rabbitmq.%s.consume", q.Name))
+	defer span.End()
+
+	var err error
+	defer func() {
+		if err != nil {
+			_ = msg.Nack(false, false)
+		} else {
+			_ = msg.Ack(false)
+		}
+	}()
 
 	o := &domain.Order{}
 	if err := json.Unmarshal(msg.Body, o); err != nil {
 		logrus.Errorf("failed to unmarshal order: %v", err)
-		_ = msg.Nack(false, false)
 		return
 	}
 
 	logrus.Infof("Processing paid order: ID=%s, CustomerID=%s, Status=%v", o.ID, o.CustomerID, o.Status)
 
-	_, err := c.app.Commands.UpdateOrder.Handle(context.TODO(), command.UpdateOrder{
+	_, err = c.app.Commands.UpdateOrder.Handle(ctx, command.UpdateOrder{
 		Order: o,
 		UpdateFunc: func(ctx context.Context, existingOrder *domain.Order) (*domain.Order, error) {
 			existingOrder.Status = o.Status
@@ -73,11 +87,14 @@ func (c *Consumer) handleMessage(msg amqp.Delivery) {
 	})
 
 	if err != nil {
+		if err = broker.HandleRetry(ctx, ch, msg); err != nil {
+			logrus.Warnf("failed to handle retry message: %s, messageID: %s, error: %v", msg.Body, msg.MessageId, err)
+		}
 		logrus.Errorf("failed to update order: %v", err)
-		_ = msg.Nack(false, false)
 		return
 	}
 
+	span.AddEvent("order.updated")
 	_ = msg.Ack(false)
 	logrus.Infof("Order consumed paid message successfully for order: %s", o.ID)
 }
