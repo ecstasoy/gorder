@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/ecstasoy/gorder/common/broker"
-	"github.com/ecstasoy/gorder/common/config"
+	_ "github.com/ecstasoy/gorder/common/config"
 	"github.com/ecstasoy/gorder/common/discovery"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/common/logging"
@@ -22,9 +22,6 @@ import (
 
 func init() {
 	logging.Init()
-	if err := config.NewViperConfig(); err != nil {
-		logrus.Fatal(err)
-	}
 }
 
 func main() {
