@@ -17,6 +17,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stripe/stripe-go/v80"
 	"github.com/stripe/stripe-go/v80/webhook"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type PaymentHandler struct {
@@ -84,11 +86,28 @@ func (h *PaymentHandler) HandleWebHook(c *gin.Context) {
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Error processing order data"})
 				return
 			}
-			h.channel.PublishWithContext(ctx, broker.EventOrderPaid, "", false, false, amqp.Publishing{
+
+			t := otel.Tracer("rabbitmq")
+			mqCtx, span := t.Start(ctx, fmt.Sprintf("rabbitmq.%s.publish", broker.EventOrderPaid))
+			defer span.End()
+
+			_, publishSpan := otel.Tracer("rabbitmq").Start(mqCtx, "rabbitmq.order.paid.publish")
+			defer publishSpan.End()
+
+			publishSpan.SetAttributes(
+				attribute.String("order.id", session.Metadata["orderID"]),
+				attribute.String("customer.id", session.Metadata["customerID"]),
+				attribute.String("exchange", broker.EventOrderPaid),
+			)
+
+			headers := broker.InjectRabbitMQHeaders(mqCtx)
+			_ = h.channel.PublishWithContext(ctx, broker.EventOrderPaid, "", false, false, amqp.Publishing{
 				ContentType:  "application/json",
 				Body:         marshalledOrder,
 				DeliveryMode: amqp.Persistent,
+				Headers:      headers,
 			})
+			publishSpan.AddEvent("message.published")
 			logrus.Infof("message published to queue %s for orderID: %s", broker.EventOrderPaid, session.Metadata["orderID"])
 		}
 	default:

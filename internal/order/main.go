@@ -10,6 +10,7 @@ import (
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/common/logging"
 	"github.com/ecstasoy/gorder/common/server"
+	"github.com/ecstasoy/gorder/common/tracing"
 	"github.com/ecstasoy/gorder/order/infra/consumer"
 	"github.com/ecstasoy/gorder/order/ports"
 	"github.com/ecstasoy/gorder/order/service"
@@ -31,6 +32,12 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	shutdown, err := tracing.InitTracerProvider(viper.GetString("jaeger.url"), serviceName)
+	if err != nil {
+		logrus.Fatalf("failed to initialize tracer provider: %v", err)
+	}
+	defer shutdown(ctx)
 
 	application, cleanup := service.NewApplication(ctx)
 	defer cleanup()

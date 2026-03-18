@@ -8,6 +8,7 @@ import (
 	"github.com/ecstasoy/gorder/common/genproto/stockpb"
 	"github.com/ecstasoy/gorder/common/logging"
 	"github.com/ecstasoy/gorder/common/server"
+	"github.com/ecstasoy/gorder/common/tracing"
 	"github.com/ecstasoy/gorder/stock/ports"
 	"github.com/ecstasoy/gorder/stock/service"
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,12 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	shutdown, err := tracing.InitTracerProvider(viper.GetString("jaeger.url"), serviceName)
+	if err != nil {
+		logrus.Fatalf("failed to initialize tracer provider: %v", err)
+	}
+	defer shutdown(ctx)
 
 	application := service.NewApplication(ctx)
 
