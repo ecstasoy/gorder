@@ -8,7 +8,15 @@ import "orderpb/order.proto";
 service StockService {
   rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
   rpc CheckIfItemsInStock(CheckIfItemsInStockRequest) returns (CheckIfItemsInStockResponse);
+  rpc RestoreStock(RestoreStockRequest) returns (RestoreStockResponse);
+  rpc WarmUpFlashStock(WarmUpFlashStockRequest) returns (WarmUpFlashStockResponse);
 }
+
+message RestoreStockRequest {
+  repeated orderpb.ItemWithQuantity Items = 1;
+}
+
+message RestoreStockResponse {}
 
 message GetItemsRequest {
   repeated string ItemIDs = 1;
@@ -26,3 +34,10 @@ message CheckIfItemsInStockResponse {
   bool InStock = 1;
   repeated orderpb.Item Items = 2;
 }
+
+message WarmUpFlashStockRequest {
+  repeated orderpb.ItemWithQuantity Items = 1;
+  int64 TTLSeconds = 2;
+}
+
+message WarmUpFlashStockResponse {}

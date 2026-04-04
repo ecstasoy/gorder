@@ -21,6 +21,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	StockService_GetItems_FullMethodName            = "/stockpb.StockService/GetItems"
 	StockService_CheckIfItemsInStock_FullMethodName = "/stockpb.StockService/CheckIfItemsInStock"
+	StockService_RestoreStock_FullMethodName        = "/stockpb.StockService/RestoreStock"
+	StockService_WarmUpFlashStock_FullMethodName    = "/stockpb.StockService/WarmUpFlashStock"
 )
 
 // StockServiceClient is the client API for StockService service.
@@ -29,6 +31,8 @@ const (
 type StockServiceClient interface {
 	GetItems(ctx context.Context, in *GetItemsRequest, opts ...grpc.CallOption) (*GetItemsResponse, error)
 	CheckIfItemsInStock(ctx context.Context, in *CheckIfItemsInStockRequest, opts ...grpc.CallOption) (*CheckIfItemsInStockResponse, error)
+	RestoreStock(ctx context.Context, in *RestoreStockRequest, opts ...grpc.CallOption) (*RestoreStockResponse, error)
+	WarmUpFlashStock(ctx context.Context, in *WarmUpFlashStockRequest, opts ...grpc.CallOption) (*WarmUpFlashStockResponse, error)
 }
 
 type stockServiceClient struct {
@@ -59,12 +63,34 @@ func (c *stockServiceClient) CheckIfItemsInStock(ctx context.Context, in *CheckI
 	return out, nil
 }
 
+func (c *stockServiceClient) RestoreStock(ctx context.Context, in *RestoreStockRequest, opts ...grpc.CallOption) (*RestoreStockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestoreStockResponse)
+	err := c.cc.Invoke(ctx, StockService_RestoreStock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) WarmUpFlashStock(ctx context.Context, in *WarmUpFlashStockRequest, opts ...grpc.CallOption) (*WarmUpFlashStockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WarmUpFlashStockResponse)
+	err := c.cc.Invoke(ctx, StockService_WarmUpFlashStock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StockServiceServer is the server API for StockService service.
 // All implementations should embed UnimplementedStockServiceServer
 // for forward compatibility.
 type StockServiceServer interface {
 	GetItems(context.Context, *GetItemsRequest) (*GetItemsResponse, error)
 	CheckIfItemsInStock(context.Context, *CheckIfItemsInStockRequest) (*CheckIfItemsInStockResponse, error)
+	RestoreStock(context.Context, *RestoreStockRequest) (*RestoreStockResponse, error)
+	WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error)
 }
 
 // UnimplementedStockServiceServer should be embedded to have
@@ -79,6 +105,12 @@ func (UnimplementedStockServiceServer) GetItems(context.Context, *GetItemsReques
 }
 func (UnimplementedStockServiceServer) CheckIfItemsInStock(context.Context, *CheckIfItemsInStockRequest) (*CheckIfItemsInStockResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckIfItemsInStock not implemented")
+}
+func (UnimplementedStockServiceServer) RestoreStock(context.Context, *RestoreStockRequest) (*RestoreStockResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestoreStock not implemented")
+}
+func (UnimplementedStockServiceServer) WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WarmUpFlashStock not implemented")
 }
 func (UnimplementedStockServiceServer) testEmbeddedByValue() {}
 
@@ -136,6 +168,42 @@ func _StockService_CheckIfItemsInStock_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StockService_RestoreStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestoreStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).RestoreStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_RestoreStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).RestoreStock(ctx, req.(*RestoreStockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_WarmUpFlashStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WarmUpFlashStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).WarmUpFlashStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_WarmUpFlashStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).WarmUpFlashStock(ctx, req.(*WarmUpFlashStockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StockService_ServiceDesc is the grpc.ServiceDesc for StockService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -150,6 +218,14 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckIfItemsInStock",
 			Handler:    _StockService_CheckIfItemsInStock_Handler,
+		},
+		{
+			MethodName: "RestoreStock",
+			Handler:    _StockService_RestoreStock_Handler,
+		},
+		{
+			MethodName: "WarmUpFlashStock",
+			Handler:    _StockService_WarmUpFlashStock_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

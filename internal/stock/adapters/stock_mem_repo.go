@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/ecstasoy/gorder/common/convertor"
+	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	domain "github.com/ecstasoy/gorder/stock/domain/stock"
 	"github.com/sirupsen/logrus"
@@ -11,10 +13,15 @@ import (
 
 type MemoryStockRepository struct {
 	lock  *sync.RWMutex
-	store map[string]*orderpb.Item
+	store map[string]*entity.Item
 }
 
-var stub = map[string]*orderpb.Item{
+func (m MemoryStockRepository) GetStock(ctx context.Context, ids []string) ([]*entity.ItemWithQuantity, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+var stub = map[string]*entity.Item{
 	"item": {
 		ID:       "foo_item",
 		Name:     "stub_item",
@@ -48,7 +55,7 @@ func NewMemoryStockRepository() *MemoryStockRepository {
 	}
 }
 
-func (m MemoryStockRepository) GetItems(ctx context.Context, ids []string) ([]*orderpb.Item, error) {
+func (m MemoryStockRepository) GetItems(ctx context.Context, ids []string) ([]*entity.Item, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
@@ -58,7 +65,7 @@ func (m MemoryStockRepository) GetItems(ctx context.Context, ids []string) ([]*o
 	)
 	for _, id := range ids {
 		if item, exist := m.store[id]; exist {
-			res = append(res, item)
+			res = append(res, convertor.NewItemConvertor().EntityToProto(item))
 		} else {
 			missing = append(missing, id)
 		}
@@ -70,7 +77,7 @@ func (m MemoryStockRepository) GetItems(ctx context.Context, ids []string) ([]*o
 			"missing": missing,
 			"store":   m.store,
 		}).Debugf("GetItems: returning %v", res)
-		return res, nil
+		return convertor.NewItemConvertor().ProtosToEntities(res), nil
 	}
 	return nil, domain.NotFoundError{Missing: missing}
 }
