@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
+	"github.com/ecstasoy/gorder/common/logging"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
 	"github.com/sirupsen/logrus"
 )
@@ -19,21 +20,27 @@ type MemoryOrderRepository struct {
 var testData = []*domain.Order{}
 
 func NewMemoryOrderRepository() *MemoryOrderRepository {
-	s := make([]*domain.Order, 0)
-	s = append(s, &domain.Order{
-		ID:          "foo_ID",
-		CustomerID:  "foo_customer_ID",
-		Status:      orderpb.OrderStatus_ORDER_STATUS_PENDING,
-		PaymentLink: "foo_payment_link",
-		Items:       nil,
-	})
+	s := []*domain.Order{
+		{
+			ID:          "fake-ID",
+			CustomerID:  "fake-customer-id",
+			Status:      orderpb.OrderStatus_ORDER_STATUS_PENDING,
+			PaymentLink: "fake-payment-link",
+			Items:       nil,
+		},
+	}
 	return &MemoryOrderRepository{
 		lock:  &sync.RWMutex{},
 		store: s,
 	}
 }
 
-func (m *MemoryOrderRepository) Create(_ context.Context, order *domain.Order) (*domain.Order, error) {
+func (m *MemoryOrderRepository) Create(ctx context.Context, order *domain.Order) (created *domain.Order, err error) {
+	_, deferLog := logging.WhenRequest(ctx, "MemoryOrderRepository.Create", map[string]any{
+		"order": order,
+	})
+	defer deferLog(created, &err)
+
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -71,7 +78,12 @@ func (m *MemoryOrderRepository) Get(_ context.Context, id, customerID string) (*
 	return nil, &domain.NotFoundError{OrderID: id}
 }
 
-func (m *MemoryOrderRepository) Update(ctx context.Context, order *domain.Order, updateFunc func(context.Context, *domain.Order) (*domain.Order, error)) error {
+func (m *MemoryOrderRepository) Update(ctx context.Context, order *domain.Order, updateFunc func(context.Context, *domain.Order) (*domain.Order, error)) (err error) {
+	_, deferLog := logging.WhenRequest(ctx, "MemoryOrderRepository.Update", map[string]any{
+		"order": order,
+	})
+	defer deferLog(nil, &err)
+
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	found := false

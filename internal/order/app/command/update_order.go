@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ecstasoy/gorder/common/decorator"
+	"github.com/ecstasoy/gorder/common/logging"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
 	"github.com/sirupsen/logrus"
 )
@@ -21,7 +22,7 @@ type updateOrderHandler struct {
 
 func NewUpdateOrderHandler(
 	orderRepo domain.Repository,
-	logger *logrus.Entry,
+	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) UpdateOrderHandler {
 	if orderRepo == nil {
@@ -35,6 +36,8 @@ func NewUpdateOrderHandler(
 }
 
 func (c updateOrderHandler) Handle(ctx context.Context, cmd UpdateOrder) (interface{}, error) {
+	var err error
+	defer logging.WhenCommandExecute(ctx, "UpdateOrderHandler.Handle", cmd, err)
 	if cmd.UpdateFunc == nil {
 		logrus.Warnf("updateOrderHandler got nil UpdateFn, order=%#v", cmd.Order)
 		cmd.UpdateFunc = func(_ context.Context, order *domain.Order) (*domain.Order, error) { return order, nil }

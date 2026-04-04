@@ -41,44 +41,52 @@ func (e OrderStatus) Valid() bool {
 
 // CreateOrderRequest defines model for CreateOrderRequest.
 type CreateOrderRequest struct {
-	CustomerID string             `json:"customerID"`
+	CustomerId string             `json:"customer_id"`
 	Items      []ItemWithQuantity `json:"items"`
 }
 
 // Error defines model for Error.
 type Error struct {
-	Message *string `json:"message,omitempty"`
+	Message string `json:"message"`
 }
 
 // Item defines model for Item.
 type Item struct {
 	Id       *string `json:"id,omitempty"`
 	Name     *string `json:"name,omitempty"`
-	PriceID  *string `json:"priceID,omitempty"`
+	PriceId  *string `json:"price_id,omitempty"`
 	Quantity *int32  `json:"quantity,omitempty"`
 }
 
 // ItemWithQuantity defines model for ItemWithQuantity.
 type ItemWithQuantity struct {
-	Id       *string `json:"id,omitempty"`
-	Quantity *int32  `json:"quantity,omitempty"`
+	Id       string `json:"id"`
+	Quantity int32  `json:"quantity"`
 }
 
 // Order defines model for Order.
 type Order struct {
-	CustomerID *string `json:"customerID,omitempty"`
-	Id         *string `json:"id,omitempty"`
-	Items      *[]Item `json:"items,omitempty"`
+	CustomerId string `json:"customer_id"`
+	Id         string `json:"id"`
+	Items      []Item `json:"items"`
 
 	// PaymentLink 支付链接
-	PaymentLink *string `json:"paymentLink,omitempty"`
+	PaymentLink string `json:"payment_link"`
 
 	// Status 订单状态
-	Status *OrderStatus `json:"status,omitempty"`
+	Status OrderStatus `json:"status"`
 }
 
 // OrderStatus 订单状态
 type OrderStatus string
 
-// PostCustomerCustomerIDOrdersJSONRequestBody defines body for PostCustomerCustomerIDOrders for application/json ContentType.
-type PostCustomerCustomerIDOrdersJSONRequestBody = CreateOrderRequest
+// Response defines model for Response.
+type Response struct {
+	Data    map[string]interface{} `json:"data"`
+	Errno   int32                  `json:"errno"`
+	Message string                 `json:"message"`
+	TraceId string                 `json:"trace_id"`
+}
+
+// PostCustomerCustomerIdOrdersJSONRequestBody defines body for PostCustomerCustomerIdOrders for application/json ContentType.
+type PostCustomerCustomerIdOrdersJSONRequestBody = CreateOrderRequest

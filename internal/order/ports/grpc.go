@@ -3,6 +3,7 @@ package ports
 import (
 	"context"
 
+	"github.com/ecstasoy/gorder/common/convertor"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/order/app"
 	"github.com/ecstasoy/gorder/order/app/command"
@@ -25,7 +26,7 @@ func NewGRPCServer(app app.Application) *GRPCServer {
 func (G GRPCServer) CreateOrder(ctx context.Context, request *orderpb.CreateOrderRequest) (*emptypb.Empty, error) {
 	_, err := G.app.Commands.CreateOrder.Handle(ctx, command.CreateOrder{
 		CustomerID: request.CustomerID,
-		Items:      request.Items,
+		Items:      convertor.NewItemWithQuantityConvertor().ProtosToEntities(request.Items),
 	})
 
 	if err != nil {
@@ -42,10 +43,16 @@ func (G GRPCServer) GetOrder(ctx context.Context, request *orderpb.GetOrderReque
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	return o.ToProto(), nil
+	return &orderpb.Order{
+		ID:          o.ID,
+		CustomerID:  o.CustomerID,
+		Status:      o.Status,
+		Items:       convertor.NewItemConvertor().EntitiesToProtos(o.Items),
+		PaymentLink: o.PaymentLink,
+	}, nil
 }
 
 func (G GRPCServer) UpdateOrder(ctx context.Context, request *orderpb.Order) (_ *emptypb.Empty, err error) {
@@ -54,22 +61,35 @@ func (G GRPCServer) UpdateOrder(ctx context.Context, request *orderpb.Order) (_ 
 	order, err := domain.NewOrder(
 		request.ID,
 		request.CustomerID,
-		request.Status.String(), // ✅ 使用 String() 方法
+		request.Status.String(),
 		request.PaymentLink,
-		request.Items,
+		convertor.NewItemConvertor().ProtosToEntities(request.Items),
 	)
 
 	if err != nil {
 		err = status.Error(codes.InvalidArgument, err.Error())
-		return
+		return nil, err
 	}
 
 	_, err = G.app.Commands.UpdateOrder.Handle(ctx, command.UpdateOrder{
 		Order: order,
-		UpdateFunc: func(ctx context.Context, order *domain.Order) (*domain.Order, error) {
-			return order, nil
+		UpdateFunc: func(ctx context.Context, oldOrder *domain.Order) (*domain.Order, error) {
+			if err := oldOrder.UpdateStatus(request.Status); err != nil {
+				return nil, err
+			}
+			if err := oldOrder.UpdatePaymentLink(request.PaymentLink); err != nil {
+				return nil, err
+			}
+			if err := oldOrder.UpdateItems(convertor.NewItemConvertor().ProtosToEntities(request.Items)); err != nil {
+				return nil, err
+			}
+			return oldOrder, nil
 		},
 	})
 
-	return
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &emptypb.Empty{}, nil
 }

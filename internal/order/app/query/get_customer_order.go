@@ -24,13 +24,12 @@ func (g getCustomerOrderHandler) Handle(ctx context.Context, query GetCustomerOr
 	if err != nil {
 		return nil, err
 	}
-
 	return o, nil
 }
 
 func NewGetCustomerOrderHandler(
 	orderRepo domain.Repository,
-	logger *logrus.Entry,
+	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) GetCustomerOrderHandler {
 	if orderRepo == nil {

@@ -2,7 +2,9 @@ package order
 
 import (
 	"errors"
+	"slices"
 
+	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 )
 
@@ -11,10 +13,10 @@ type Order struct {
 	CustomerID  string
 	Status      orderpb.OrderStatus
 	PaymentLink string
-	Items       []*orderpb.Item
+	Items       []*entity.Item
 }
 
-func NewOrder(id, customerID, status, paymentLink string, items []*orderpb.Item) (*Order, error) {
+func NewOrder(id, customerID, status, paymentLink string, items []*entity.Item) (*Order, error) {
 	if id == "" {
 		return nil, errors.New("id is required")
 	}
@@ -36,12 +38,62 @@ func NewOrder(id, customerID, status, paymentLink string, items []*orderpb.Item)
 	}, nil
 }
 
-func (o *Order) ToProto() *orderpb.Order {
-	return &orderpb.Order{
-		ID:          o.ID,
-		CustomerID:  o.CustomerID,
-		Status:      o.Status,
-		PaymentLink: o.PaymentLink,
-		Items:       o.Items,
+func (o *Order) UpdatePaymentLink(paymentLink string) error {
+	//if paymentLink == "" {
+	//	return errors.New("cannot update empty paymentLink")
+	//}
+	o.PaymentLink = paymentLink
+	return nil
+}
+
+func (o *Order) UpdateItems(items []*entity.Item) error {
+	o.Items = items
+	return nil
+}
+
+func (o *Order) UpdateStatus(to orderpb.OrderStatus) error {
+	if !o.isValidStatusTransition(to) {
+		return &StatusConflictError{
+			OrderID:       o.ID,
+			CurrentStatus: o.Status,
+			TargetStatus:  to,
+		}
 	}
+	o.Status = to
+	return nil
+}
+
+func (o *Order) isValidStatusTransition(to orderpb.OrderStatus) bool {
+	if o.Status == to {
+		return true
+	}
+
+	validTransitions := map[orderpb.OrderStatus][]orderpb.OrderStatus{
+		orderpb.OrderStatus_ORDER_STATUS_PENDING: {
+			orderpb.OrderStatus_ORDER_STATUS_PAID,
+			orderpb.OrderStatus_ORDER_STATUS_CANCELLED,
+		},
+		orderpb.OrderStatus_ORDER_STATUS_PAID: {
+			orderpb.OrderStatus_ORDER_STATUS_PREPARING,
+			orderpb.OrderStatus_ORDER_STATUS_CANCELLED,
+		},
+		orderpb.OrderStatus_ORDER_STATUS_PREPARING: {
+			orderpb.OrderStatus_ORDER_STATUS_READY,
+			orderpb.OrderStatus_ORDER_STATUS_CANCELLED,
+		},
+		orderpb.OrderStatus_ORDER_STATUS_READY: {
+			orderpb.OrderStatus_ORDER_STATUS_DELIVERING,
+			orderpb.OrderStatus_ORDER_STATUS_CANCELLED,
+		},
+		orderpb.OrderStatus_ORDER_STATUS_DELIVERING: {
+			orderpb.OrderStatus_ORDER_STATUS_DELIVERED,
+		},
+	}
+
+	allowedStatuses, ok := validTransitions[o.Status]
+	if !ok {
+		return false
+	}
+
+	return slices.Contains(allowedStatuses, to)
 }

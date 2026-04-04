@@ -36,7 +36,7 @@ func main() {
 	}
 	defer shutdown(ctx)
 
-	application, cleanup := service.NewApplication(ctx)
+	application, stockGRPC, cleanup := service.NewApplication(ctx)
 	defer cleanup()
 
 	ch, closeCh := broker.Connect(
@@ -50,7 +50,9 @@ func main() {
 		_ = ch.Close()
 	}()
 
-	go consumer.NewConsumer(application).Listen(ch)
+	c := consumer.NewConsumer(application)
+	go c.Listen(ch)
+	go c.ListenFlashSaleOrders(ch)
 
 	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
 
@@ -74,6 +76,14 @@ func main() {
 			Middlewares:  nil,
 			ErrorHandler: nil,
 		})
+		flashServer := FlashSaleHTTPServer{
+			app:       application,
+			stockGRPC: stockGRPC,
+			amqpCh:    ch,
+		}
+		router.POST("/flash-sale/warmup", flashServer.PostFlashSaleWarmup)
+		router.POST("/flash-sale/orders", flashServer.PostFlashSaleOrders)
+		router.GET("/flash-sale/result/:token", flashServer.GetFlashSaleResult)
 	})
 	log.Printf("%v", viper.Get("order"))
 }

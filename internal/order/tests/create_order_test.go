@@ -31,11 +31,11 @@ func TestCreateOrder_success(t *testing.T) {
 		CustomerId: "123",
 		Items: []sw.ItemWithQuantity{
 			{
-				Id:       "prod_R3g7MikGYsXKzr",
+				Id:       "prod_U9k6VcIEwQb83T",
 				Quantity: 1,
 			},
 			{
-				Id:       "prod_R285C3Wb7FDprc",
+				Id:       "prod_U9k6gLFpAGaHQl",
 				Quantity: 10,
 			},
 		},
