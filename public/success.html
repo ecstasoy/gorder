@@ -129,8 +129,8 @@
     
     const getOrder = async() => {
         try {
-            const res = await fetch(`/api/customer/${customerID}/orders/${orderID}`);
-            const data = await res.json();
+        const res = await fetch(`/api/customer/${customerID}/orders/${orderID}`);
+        const data = await res.json();
             console.log("🔍 Full response:", data);
             
             // 获取订单数据（直接从 data.data，不是 data.data.order）
@@ -146,8 +146,8 @@
             
             // 如果有支付链接，显示支付弹窗
             if (orderData.payment_link && orderData.payment_link !== '' && orderData.status === OrderStatus.PENDING) {
-                order.status = '等待支付...';
-                document.getElementById('orderStatus').innerText = order.status;
+            order.status = '等待支付...';
+            document.getElementById('orderStatus').innerText = order.status;
                 document.querySelector('.after-payment-popup').style.display = 'flex';
                 document.getElementById('payment-link').href = orderData.payment_link;
                 console.log("✅ Showing payment popup with link:", orderData.payment_link);
@@ -155,19 +155,19 @@
                 setTimeout(getOrder, 5000);
             }
             else if (orderData.status === OrderStatus.PAID) {
-                order.status = '已支付成功，请等待...';
-                document.getElementById('orderStatus').innerText = order.status;
+            order.status = '已支付成功，请等待...';
+            document.getElementById('orderStatus').innerText = order.status;
                 // 隐藏支付弹窗
                 document.querySelector('.after-payment-popup').style.display = 'none';
                 console.log("✅ Payment completed, hiding payment popup");
-                setTimeout(getOrder, 5000);
+            setTimeout(getOrder, 5000);
             }
             else if (orderData.status === OrderStatus.READY) {
-                order.status = '已完成...';
-                document.querySelector('.after-payment-popup').style.display = 'none';
+            order.status = '已完成...';
+            document.querySelector('.after-payment-popup').style.display = 'none';
                 document.querySelector('.ready-popup').style.display = 'flex';
-                document.getElementById('orderID').innerText = orderID;
-                document.getElementById('orderStatus').innerText = order.status;
+            document.getElementById('orderID').innerText = orderID;
+            document.getElementById('orderStatus').innerText = order.status;
             }
             else {
                 // 其他状态，继续轮询
