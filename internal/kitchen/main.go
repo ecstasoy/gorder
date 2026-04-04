@@ -1,0 +1,66 @@
+package main
+
+import (
+	"context"
+
+	_ "github.com/ecstasoy/gorder/common/config"
+	"github.com/ecstasoy/gorder/common/discovery"
+	"github.com/ecstasoy/gorder/common/genproto/stockpb"
+	"github.com/ecstasoy/gorder/common/logging"
+	"github.com/ecstasoy/gorder/common/server"
+	"github.com/ecstasoy/gorder/common/tracing"
+	"github.com/ecstasoy/gorder/stock/ports"
+	"github.com/ecstasoy/gorder/stock/service"
+	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
+	"google.golang.org/grpc"
+)
+
+func init() {
+	logging.Init()
+}
+
+func main() {
+	serviceName := viper.GetString("stock.service-name")
+	serverType := viper.GetString("stock.server-to-run")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	shutdown, err := tracing.InitTracerProvider(viper.GetString("jaeger.url"), serviceName)
+	if err != nil {
+		logrus.Fatalf("failed to initialize tracer provider: %v", err)
+	}
+	defer shutdown(ctx)
+
+	application := service.NewApplication(ctx)
+
+	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
+
+	if err != nil {
+		logrus.Fatalf("failed to register to consul: %v", err)
+	}
+	defer func() {
+		_ = deregisterFunc()
+	}()
+
+	switch serverType {
+	case "grpc":
+		server.RunGRPCServer(serviceName, func(server *grpc.Server) {
+			stockpb.RegisterStockServiceServer(server, ports.NewGRPCServer(application))
+		})
+	case "http":
+		server.RunHTTPServer(serviceName, func(router *gin.Engine) {
+			ports.RegisterHandlersWithOptions(router, HTTPServer{
+				app: application,
+			}, ports.GinServerOptions{
+				BaseURL:      "/api",
+				Middlewares:  nil,
+				ErrorHandler: nil,
+			})
+		})
+	default:
+		panic("unknown server type")
+	}
+}

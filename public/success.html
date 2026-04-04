@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gorder</title>
+</head>
+<body>
+<section>
+    <p>
+        您已成功下单！
+    </p>
+    <p>
+        订单状态：<span id="orderStatus">等待中...</span>
+    </p>
+    <div class="ready-popup">
+        <p>您的订单正在处理中...</p>
+        <p style="color:burlywood; margin:12px">
+            订单号：<b><span id="orderID"></span></b>
+        </p>
+
+        <button class="close-btn" onclick="document.querySelector('.ready-popup').style.display = 'none'">
+            关闭
+        </button>
+    </div>
+
+    <div class="after-payment-popup">
+        <p>等待支付中...</p>
+        <a id="payment-link" href="#">去支付</a>
+    </div>
+</section>
+</body>
+
+<style>
+    html {
+        margin: 0;
+        padding: 0;
+        background-color: antiquewhite;
+        color: darkblue;
+    }
+
+    section {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+
+    .ready-popup {
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 20px;
+        background-color: cadetblue;
+        z-index: 1;
+        border: 2px solid black;
+        border-radius: 5px;
+    }
+
+    .ready-popup p {
+        margin: 0;
+    }
+
+    .after-payment-popup {
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 20px;
+        background-color: cadetblue;
+        z-index: 1;
+        border: 2px solid black;
+        border-radius: 5px;
+    }
+
+    .after-payment-popup p {
+        margin: 0;
+    }
+    .after-payment-popup a {
+        color: white;
+        margin-top: 10px;
+        padding: 5px 10px;
+        background-color: green;
+        border-radius: 5px;
+        text-decoration: none;
+    }
+
+    .close-btn {
+        margin-top: 10px;
+        padding: 5px 10px;
+        background-color: green;
+        border-radius: 5px;
+        border: none;
+        cursor: pointer;
+    }
+</style>
+
+<script>
+    const urlParam = new URLSearchParams(window.location.search);
+    const customerID = urlParam.get('customerID');
+    const orderID = urlParam.get('orderID');
+    const order = {
+        customerID,
+        orderID,
+        status: 'pending'
+    };
+    
+    // OrderStatus 枚举值（匹配后端字符串格式）
+    const OrderStatus = {
+        UNSPECIFIED: "ORDER_STATUS_UNSPECIFIED",
+        PENDING: "ORDER_STATUS_PENDING",
+        PAID: "ORDER_STATUS_PAID",
+        PREPARING: "ORDER_STATUS_PREPARING",
+        READY: "ORDER_STATUS_READY",
+        DELIVERING: "ORDER_STATUS_DELIVERING",
+        DELIVERED: "ORDER_STATUS_DELIVERED",
+        CANCELLED: "ORDER_STATUS_CANCELLED"
+    };
+    
+    const getOrder = async() => {
+        try {
+            const res = await fetch(`/api/customer/${customerID}/orders/${orderID}`);
+            const data = await res.json();
+            console.log("🔍 Full response:", data);
+            
+            // 获取订单数据（直接从 data.data，不是 data.data.order）
+            const orderData = data.data;
+            if (!orderData) {
+                console.error("❌ No order data found in response");
+                return;
+            }
+            
+            console.log("🔍 Order data:", orderData);
+            console.log("🔍 Status:", orderData.status);
+            console.log("🔍 PaymentLink:", orderData.payment_link);
+            
+            // 如果有支付链接，显示支付弹窗
+            if (orderData.payment_link && orderData.payment_link !== '' && orderData.status === OrderStatus.PENDING) {
+                order.status = '等待支付...';
+                document.getElementById('orderStatus').innerText = order.status;
+                document.querySelector('.after-payment-popup').style.display = 'flex';
+                document.getElementById('payment-link').href = orderData.payment_link;
+                console.log("✅ Showing payment popup with link:", orderData.payment_link);
+                // 继续轮询检查支付状态
+                setTimeout(getOrder, 5000);
+            }
+            else if (orderData.status === OrderStatus.PAID) {
+                order.status = '已支付成功，请等待...';
+                document.getElementById('orderStatus').innerText = order.status;
+                // 隐藏支付弹窗
+                document.querySelector('.after-payment-popup').style.display = 'none';
+                console.log("✅ Payment completed, hiding payment popup");
+                setTimeout(getOrder, 5000);
+            }
+            else if (orderData.status === OrderStatus.READY) {
+                order.status = '已完成...';
+                document.querySelector('.after-payment-popup').style.display = 'none';
+                document.querySelector('.ready-popup').style.display = 'flex';
+                document.getElementById('orderID').innerText = orderID;
+                document.getElementById('orderStatus').innerText = order.status;
+            }
+            else {
+                // 其他状态，继续轮询
+                setTimeout(getOrder, 5000);
+            }
+        } catch (error) {
+            console.error("❌ Error fetching order:", error);
+            setTimeout(getOrder, 5000);
+        }
+    }
+    
+    getOrder();
+</script>
+</html>

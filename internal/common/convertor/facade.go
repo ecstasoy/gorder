@@ -1,6 +1,8 @@
 package convertor
 
-import "sync"
+import (
+	"sync"
+)
 
 var (
 	orderConvertor *OrderConvertor

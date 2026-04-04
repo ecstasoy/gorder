@@ -2,9 +2,8 @@ package convertor
 
 import (
 	client "github.com/ecstasoy/gorder/common/client/order"
+	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
-	domain "github.com/ecstasoy/gorder/order/domain/order"
-	"github.com/ecstasoy/gorder/order/entity"
 )
 
 type OrderConvertor struct{}
@@ -53,7 +52,7 @@ func (c *ItemWithQuantityConvertor) ClientToEntity(i client.ItemWithQuantity) *e
 	}
 }
 
-func (c *OrderConvertor) EntityToProto(o *domain.Order) *orderpb.Order {
+func (c *OrderConvertor) EntityToProto(o *entity.Order) *orderpb.Order {
 	c.check(o)
 	return &orderpb.Order{
 		ID:          o.ID,
@@ -64,9 +63,9 @@ func (c *OrderConvertor) EntityToProto(o *domain.Order) *orderpb.Order {
 	}
 }
 
-func (c *OrderConvertor) ProtoToEntity(o *orderpb.Order) *domain.Order {
+func (c *OrderConvertor) ProtoToEntity(o *orderpb.Order) *entity.Order {
 	c.check(o)
-	return &domain.Order{
+	return &entity.Order{
 		ID:          o.ID,
 		CustomerID:  o.CustomerID,
 		Status:      o.Status,
@@ -75,7 +74,7 @@ func (c *OrderConvertor) ProtoToEntity(o *orderpb.Order) *domain.Order {
 	}
 }
 
-func (c *OrderConvertor) ClientToEntity(o *client.Order) *domain.Order {
+func (c *OrderConvertor) ClientToEntity(o *client.Order) *entity.Order {
 	c.check(o)
 
 	status := orderpb.OrderStatus_ORDER_STATUS_UNSPECIFIED
@@ -83,7 +82,7 @@ func (c *OrderConvertor) ClientToEntity(o *client.Order) *domain.Order {
 		status = orderpb.OrderStatus(statusValue)
 	}
 
-	return &domain.Order{
+	return &entity.Order{
 		ID:          o.Id,
 		CustomerID:  o.CustomerId,
 		Status:      status,
@@ -92,7 +91,7 @@ func (c *OrderConvertor) ClientToEntity(o *client.Order) *domain.Order {
 	}
 }
 
-func (c *OrderConvertor) EntityToClient(o *domain.Order) *client.Order {
+func (c *OrderConvertor) EntityToClient(o *entity.Order) *client.Order {
 	c.check(o)
 
 	statusStr := client.OrderStatus(o.Status.String())
