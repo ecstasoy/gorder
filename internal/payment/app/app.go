@@ -10,4 +10,5 @@ type Application struct {
 
 type Commands struct {
 	CreatePayment command.CreatePaymentHandler
+	RefundPayment command.RefundPaymentHandler
 }

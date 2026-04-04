@@ -3,7 +3,7 @@ package processor
 import (
 	"context"
 
-	"github.com/ecstasoy/gorder/common/genproto/orderpb"
+	"github.com/ecstasoy/gorder/common/entity"
 )
 
 // stub
@@ -14,6 +14,10 @@ func NewMemoryProcessor() *memoryProcessor {
 	return &memoryProcessor{}
 }
 
-func (m memoryProcessor) CreatePaymentLink(ctx context.Context, order *orderpb.Order) (string, error) {
+func (m memoryProcessor) CreatePaymentLink(ctx context.Context, order *entity.Order) (string, error) {
 	return "mem-payment-link", nil
+}
+
+func (m memoryProcessor) Refund(_ context.Context, _ string) error {
+	return nil
 }
