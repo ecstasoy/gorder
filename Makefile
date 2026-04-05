@@ -13,6 +13,6 @@ genopenapi:
 fmt:
 	goimports -l -w internal/
 
-.PHONT: lint
+.PHONY: lint
 lint:
 	@./scripts/lint.sh
