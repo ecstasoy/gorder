@@ -50,11 +50,11 @@ func (it Item) validate() error {
 	if it.PriceID == "" {
 		invalidFields = append(invalidFields, "PriceID")
 	}
-	
+
 	if len(invalidFields) > 0 {
 		return fmt.Errorf("item = %v invalid, empty fields: %s", it, strings.Join(invalidFields, ", "))
 	}
-	
+
 	return nil
 }
 

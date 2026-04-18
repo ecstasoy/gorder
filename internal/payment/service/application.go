@@ -12,6 +12,7 @@ import (
 	"github.com/ecstasoy/gorder/payment/domain"
 	"github.com/ecstasoy/gorder/payment/infra/processor"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 func NewApplication(ctx context.Context) (app.Application, func()) {
@@ -20,9 +21,20 @@ func NewApplication(ctx context.Context) (app.Application, func()) {
 		panic(err)
 	}
 	orderGRPC := adapters.NewOrderGRPC(orderClient)
-	//memoryProcessor := processor.NewMemoryProcessor()
-	stripeProcessor := processor.NewStripeProcessor(config.GetStringWithEnv("stripe-key"))
-	return newApplication(ctx, orderGRPC, stripeProcessor), func() {
+
+	// payment.processor 配置切换 processor:"stripe" (真实 Stripe API) 或 "mem" (内存 stub,压测用)
+	// 默认 stripe 保持原有行为
+	var proc domain.Processor
+	switch viper.GetString("payment.processor") {
+	case "mem":
+		logrus.Info("Payment: using in-memory processor (stub, for load testing)")
+		proc = processor.NewMemoryProcessor()
+	default:
+		logrus.Info("Payment: using Stripe processor")
+		proc = processor.NewStripeProcessor(config.GetStringWithEnv("stripe-key"))
+	}
+
+	return newApplication(ctx, orderGRPC, proc), func() {
 		_ = grpcClient.CloseOrderClient()
 	}
 }

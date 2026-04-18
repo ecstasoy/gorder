@@ -31,7 +31,18 @@ func NewConsumer(orderGRPC OrderService) *Consumer {
 	}
 }
 
+const (
+	kitchenPrefetch = 50
+	kitchenWorkers  = 20
+)
+
 func (c *Consumer) Listen(ch *amqp.Channel) {
+	// Prefetch + worker pool, cook() 本身 sleep 5 秒模拟备餐,
+	// 串行的话吞吐上限只有 0.2 orders/sec,并行后能到 ~4 orders/sec
+	if err := ch.Qos(kitchenPrefetch, 0, false); err != nil {
+		logrus.Fatal(fmt.Errorf("failed to set QoS: %w", err))
+	}
+
 	q, err := ch.QueueDeclare("", true, false, true, false, nil)
 	if err != nil {
 		logrus.Fatal(fmt.Errorf("failed to declare queue: %w", err))
@@ -43,16 +54,22 @@ func (c *Consumer) Listen(ch *amqp.Channel) {
 
 	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
-		logrus.Warnf("failed to consume message: %w", err)
+		// 之前这里只是 Warnf 还用错了 %w 格式符; Consume 失败应该直接 Fatal,
+		// 否则 goroutine 会 block 在 nil channel 上变僵尸
+		logrus.Fatalf("failed to consume message: %v", err)
+	}
+
+	logrus.Infof("Kitchen consumer started on anonymous queue: %s x %d workers", q.Name, kitchenWorkers)
+
+	for i := 0; i < kitchenWorkers; i++ {
+		go func(workerID int) {
+			for msg := range msgs {
+				c.handleMessage(ch, msg, q)
+			}
+		}(i)
 	}
 
 	var forever chan struct{}
-	go func() {
-		for msg := range msgs {
-			c.handleMessage(ch, msg, q)
-		}
-	}()
-
 	<-forever
 }
 

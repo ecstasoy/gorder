@@ -14,21 +14,38 @@ import (
 	domain "github.com/ecstasoy/gorder/order/domain/order"
 	"github.com/pkg/errors"
 	amqp "github.com/rabbitmq/amqp091-go"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 )
 
 type Consumer struct {
-	app app.Application
+	app         app.Application
+	redisClient *goredis.Client
 }
 
-func NewConsumer(app app.Application) *Consumer {
+func NewConsumer(app app.Application, redisClient *goredis.Client) *Consumer {
 	return &Consumer{
-		app: app,
+		app:         app,
+		redisClient: redisClient,
 	}
 }
 
+const (
+	// Prefetch / worker 数 (对应 channel 级别)
+	orderPaidPrefetch = 100
+	orderPaidWorkers  = 10
+
+	// timeout 是低频触发 (到 15min ttl 才触发),少量 worker 够了
+	paymentTimeoutWorkers = 5
+)
+
 func (c *Consumer) Listen(ch *amqp.Channel) {
+	// Prefetch 让 broker 一次 push 多条消息,多个 worker 才能真正并行消化
+	if err := ch.Qos(orderPaidPrefetch, 0, false); err != nil {
+		logrus.Fatal(fmt.Errorf("failed to set QoS: %w", err))
+	}
+
 	q, err := ch.QueueDeclare(broker.EventOrderPaid, true, false, false, false, nil)
 	if err != nil {
 		logrus.Fatal(fmt.Errorf("failed to declare queue: %w", err))
@@ -41,7 +58,7 @@ func (c *Consumer) Listen(ch *amqp.Channel) {
 
 	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
-		logrus.Fatal("failed to consume message: %w", err)
+		logrus.Fatalf("failed to consume order.paid: %v", err)
 	}
 
 	timeoutQ, err := ch.QueueDeclare(broker.EventOrderPaymentTimeout, true, false, false, false, nil)
@@ -53,20 +70,28 @@ func (c *Consumer) Listen(ch *amqp.Channel) {
 		logrus.Fatal(fmt.Errorf("failed to consume timeout message: %w", err))
 	}
 
-	logrus.Infof("Order consumer started, listening on queues: %s, %s", broker.EventOrderPaid, broker.EventOrderPaymentTimeout)
+	logrus.Infof("Order consumer started: order.paid x %d workers, order.payment.timeout x %d workers",
+		orderPaidWorkers, paymentTimeoutWorkers)
+
+	// order.paid worker pool
+	for i := 0; i < orderPaidWorkers; i++ {
+		go func(workerID int) {
+			for msg := range msgs {
+				c.handleMessage(ch, msg, q)
+			}
+		}(i)
+	}
+
+	// order.payment.timeout worker pool
+	for i := 0; i < paymentTimeoutWorkers; i++ {
+		go func(workerID int) {
+			for msg := range timeoutMsgs {
+				c.handlePaymentTimeout(ch, msg, timeoutQ)
+			}
+		}(i)
+	}
 
 	var forever chan struct{}
-	go func() {
-		for msg := range msgs {
-			c.handleMessage(ch, msg, q)
-		}
-	}()
-	go func() {
-		for msg := range timeoutMsgs {
-			c.handlePaymentTimeout(ch, msg, timeoutQ)
-		}
-	}()
-
 	<-forever
 }
 

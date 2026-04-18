@@ -22,7 +22,13 @@ var (
 	maxRetryCount = viper.GetInt64("rabbitmq.max-retry-count")
 )
 
-func Connect(user, pwd, host, port string) (*amqp.Channel, func() error) {
+// Connect 建立到 RabbitMQ 的连接。返回:
+//   - *amqp.Connection: 长连接,consumer 可以用它 conn.Channel() 各自开独立 channel
+//     (channel 在 AMQP 协议层不是 goroutine-safe,不同的 consumer / publisher 必须
+//     用不同的 channel,否则会出现 503 "unexpected command received" 错误)
+//   - *amqp.Channel: 专用于 publisher 的共享 channel,配合 publishMutex 串行化 publish
+//   - func() error: 清理函数,会关闭 channel 和 connection
+func Connect(user, pwd, host, port string) (*amqp.Connection, *amqp.Channel, func() error) {
 	address := fmt.Sprintf("amqp://%s:%s@%s:%s/", user, pwd, host, port)
 	logrus.Infof("Connecting to RabbitMQ at %s", address)
 
@@ -54,8 +60,23 @@ func Connect(user, pwd, host, port string) (*amqp.Channel, func() error) {
 		logrus.Fatal(fmt.Errorf("failed to create payment timeout queue: %w", err))
 	}
 
+	// 启动时一次性声明所有 direct queue,避免 PublishEvent 路径上做并发 QueueDeclare
+	// (QueueDeclare 和 Publish 一样是 channel 级操作,不是 thread-safe)
+	for _, q := range []string{
+		EventOrderCreated,
+		EventFlashSaleOrder,
+		EventOrderRefund,
+	} {
+		if _, err := ch.QueueDeclare(q, true, false, false, false, nil); err != nil {
+			logrus.Fatal(fmt.Errorf("failed to declare queue %s: %w", q, err))
+		}
+	}
+
 	logrus.Info("Successfully connected to RabbitMQ")
-	return ch, ch.Close
+	return conn, ch, func() error {
+		_ = ch.Close()
+		return conn.Close()
+	}
 }
 
 func createPaymentTimeoutQueue(ch *amqp.Channel) error {

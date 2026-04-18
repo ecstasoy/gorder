@@ -40,8 +40,12 @@ func (e *Error) Error() string {
 	var msg string
 	if e.msg != "" {
 		msg = e.msg
+	} else {
+		msg = consts.ErrMsg[e.code]
 	}
-	msg = consts.ErrMsg[e.code]
+	if e.err == nil {
+		return msg
+	}
 	return msg + " -> " + e.err.Error()
 }
 

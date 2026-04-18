@@ -34,7 +34,7 @@ func main() {
 	application, cleanup := service.NewApplication(ctx)
 	defer cleanup()
 
-	ch, closeCh := broker.Connect(
+	conn, ch, closeCh := broker.Connect(
 		viper.GetString("rabbitmq.user"),
 		viper.GetString("rabbitmq.password"),
 		viper.GetString("rabbitmq.host"),
@@ -43,10 +43,16 @@ func main() {
 
 	defer func() {
 		_ = closeCh()
-		_ = ch.Close()
 	}()
 
-	go consumer.NewConsumer(application).Listen(ch)
+	// Consumer 必须用独立 channel,不和 publisher 共用
+	consumerCh, err := conn.Channel()
+	if err != nil {
+		logrus.Fatalf("failed to open payment consumer channel: %v", err)
+	}
+	defer consumerCh.Close()
+
+	go consumer.NewConsumer(application).Listen(consumerCh)
 
 	paymentHandler := NewPaymentHandler(ch)
 	switch serverType {

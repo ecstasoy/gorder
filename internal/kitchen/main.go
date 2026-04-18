@@ -39,7 +39,7 @@ func main() {
 	}
 	defer grpcClient.CloseOrderClient()
 
-	ch, closeCh := broker.Connect(
+	_, ch, closeCh := broker.Connect(
 		viper.GetString("rabbitmq.user"),
 		viper.GetString("rabbitmq.password"),
 		viper.GetString("rabbitmq.host"),
@@ -47,7 +47,6 @@ func main() {
 	)
 	defer func() {
 		_ = closeCh()
-		_ = ch.Close()
 	}()
 
 	orderGRPC := adapters.NewOrderGRPC(orderClient)

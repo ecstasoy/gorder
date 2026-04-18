@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -18,55 +19,6 @@ const (
 type stockErr string
 
 func (e stockErr) Error() string { return string(e) }
-
-var luaDecrStock = redis.NewScript(`
-  local current = redis.call("GET", KEYS[1])
-  if current == false then
-      return -1
-  end
-  local qty = tonumber(current)
-  local want = tonumber(ARGV[1])
-  if qty < want then
-      return -2
-  end
-  redis.call("DECRBY", KEYS[1], want)
-  return qty - want
-  `)
-
-func DecrStock(ctx context.Context, client *redis.Client, key string, quantity int64) (remaining int64, err error) {
-	now := time.Now()
-	defer func() {
-		l := logrus.WithContext(ctx).WithFields(logrus.Fields{
-			"start":       now,
-			"key":         key,
-			"quantity":    quantity,
-			logging.Error: err,
-			logging.Cost:  time.Since(now).Milliseconds(),
-		})
-		if err != nil {
-			l.Warn("_redis_decr_stock_failed")
-		} else {
-			l.Info("_redis_decr_stock_success")
-		}
-	}()
-
-	if client == nil {
-		return 0, errors.New("redis client is nil")
-	}
-
-	result, err := luaDecrStock.Run(ctx, client, []string{key}, quantity).Int64()
-	if err != nil {
-		return 0, err
-	}
-	switch result {
-	case -1:
-		return 0, ErrStockKeyNotFound
-	case -2:
-		return 0, ErrStockInsufficient
-	default:
-		return result, nil
-	}
-}
 
 func SetFlashStock(ctx context.Context, client *redis.Client, key string, quantity int32, ttl time.Duration) (err error) {
 	now := time.Now()
@@ -90,29 +42,6 @@ func SetFlashStock(ctx context.Context, client *redis.Client, key string, quanti
 	}
 
 	return client.Set(ctx, key, quantity, ttl).Err()
-}
-
-// SetNX 仅在 key 不存在时设置，返回 true 表示设置成功（首次），false 表示已存在。
-func SetNX(ctx context.Context, client *redis.Client, key, value string, ttl time.Duration) (ok bool, err error) {
-	now := time.Now()
-	defer func() {
-		l := logrus.WithContext(ctx).WithFields(logrus.Fields{
-			"start":       now,
-			"key":         key,
-			logging.Error: err,
-			logging.Cost:  time.Since(now).Milliseconds(),
-		})
-		if err != nil {
-			l.Warn("_redis_setnx_failed")
-		} else {
-			l.Info("_redis_setnx_success")
-		}
-	}()
-	if client == nil {
-		return false, errors.New("redis client is nil")
-	}
-	ok, err = client.SetNX(ctx, key, value, ttl).Result()
-	return ok, err
 }
 
 func Get(ctx context.Context, client *redis.Client, key string) (val string, err error) {
@@ -150,5 +79,139 @@ func Del(ctx context.Context, client *redis.Client, key string) (err error) {
 		return errors.New("redis client is nil")
 	}
 	_, err = client.Del(ctx, key).Result()
+	return err
+}
+
+// ---- Flash sale product metadata cache (Name + PriceID snapshot) ----
+
+type FlashMeta struct {
+	Name    string `json:"name"`
+	PriceID string `json:"price_id"`
+}
+
+func SetFlashMeta(ctx context.Context, client *redis.Client, key string, meta FlashMeta, ttl time.Duration) (err error) {
+	now := time.Now()
+	defer func() {
+		l := logrus.WithContext(ctx).WithFields(logrus.Fields{
+			"start":       now,
+			"key":         key,
+			logging.Error: err,
+			logging.Cost:  time.Since(now).Milliseconds(),
+		})
+		if err != nil {
+			l.Warn("_redis_set_flash_meta_failed")
+		} else {
+			l.Info("_redis_set_flash_meta_success")
+		}
+	}()
+
+	if client == nil {
+		return errors.New("redis client is nil")
+	}
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	return client.Set(ctx, key, b, ttl).Err()
+}
+
+func GetFlashMeta(ctx context.Context, client *redis.Client, key string) (meta *FlashMeta, err error) {
+	if client == nil {
+		return nil, errors.New("redis client is nil")
+	}
+	val, err := client.Get(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	m := &FlashMeta{}
+	if err = json.Unmarshal([]byte(val), m); err != nil {
+		return nil, err
+	}
+
+	return m, nil
+}
+
+// ---- Flash sale atomic reserve (Lua-merged entry) ----
+
+// FlashReserveResult 秒杀 Lua 的返回码
+type FlashReserveResult int
+
+const (
+	FlashReserveOK           FlashReserveResult = 0
+	FlashReserveNotActive    FlashReserveResult = -1
+	FlashReserveInsufficient FlashReserveResult = -2
+	FlashReserveDuplicate    FlashReserveResult = -3
+)
+
+var luaFlashSaleReserve = redis.NewScript(`
+  local stock = redis.call("GET", KEYS[1])
+  if stock == false then
+      return {-1, 0}
+  end
+
+  local ttl = redis.call("TTL", KEYS[1])
+  if ttl <= 0 then
+      ttl = tonumber(ARGV[3])
+  end
+
+  if redis.call("EXISTS", KEYS[2]) == 1 then
+      return {-3, tonumber(stock)}
+  end
+
+  local qty = tonumber(stock)
+  local want = tonumber(ARGV[1])
+  if qty < want then
+      return {-2, qty}
+  end
+
+  redis.call("DECRBY", KEYS[1], want)
+  redis.call("SET", KEYS[2], ARGV[2], "EX", ttl)
+  return {0, qty - want}
+  `)
+
+func FlashSaleReserve(
+	ctx context.Context,
+	client *redis.Client,
+	stockKey, onceKey, token string,
+	quantity int64,
+	fallbackTTLSeconds int64,
+) (FlashReserveResult, int64, error) {
+	if client == nil {
+		return 0, 0, errors.New("redis client is nil")
+	}
+	raw, err := luaFlashSaleReserve.Run(ctx, client,
+		[]string{stockKey, onceKey},
+		quantity, token, fallbackTTLSeconds,
+	).Result()
+	if err != nil {
+		return 0, 0, err
+	}
+	arr, ok := raw.([]interface{})
+	if !ok || len(arr) != 2 {
+		return 0, 0, errors.New("unexpected lua flash reserve response shape")
+	}
+	codeInt, _ := arr[0].(int64)
+	remainInt, _ := arr[1].(int64)
+	return FlashReserveResult(codeInt), remainInt, nil
+}
+
+var luaFlashSaleRollback = redis.NewScript(`
+  redis.call("INCRBY", KEYS[1], ARGV[1])
+  redis.call("DEL", KEYS[2])
+  return 1
+  `)
+
+func FlashSaleRollback(
+	ctx context.Context,
+	client *redis.Client,
+	stockKey, onceKey string,
+	quantity int64,
+) error {
+	if client == nil {
+		return errors.New("redis client is nil")
+	}
+	_, err := luaFlashSaleRollback.Run(ctx, client,
+		[]string{stockKey, onceKey}, quantity,
+	).Result()
 	return err
 }

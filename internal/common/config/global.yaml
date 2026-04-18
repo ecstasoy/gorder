@@ -18,6 +18,7 @@ payment:
     server-to-run: http
     http-addr: 127.0.0.1:9092
     grpc-addr: 127.0.0.1:5004
+    processor: stripe                # mem = in-memory stub (压测); stripe = 真实 Stripe API (生产)
 
 kitchen:
     service-name: kitchen

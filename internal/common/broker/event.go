@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"encoding/json"
+	"sync"
 
 	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
@@ -11,6 +12,15 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
 )
+
+// publishMutex 保护所有向 RabbitMQ 的 publish 调用。
+// RabbitMQ Go 客户端的 *amqp.Channel 不是 goroutine-safe:
+// 多个 goroutine 并发调用 Channel.Publish 会交错写入 TCP 帧,
+// 被 broker 检测到非法帧后立刻 close channel,整条 channel 陷入
+// "channel/connection is not open" 永久失败状态。
+// 用一个全局 mutex 串行化所有 publish,性能代价可忽略 (publish 本身 < 1ms),
+// 但换来稳定性。
+var publishMutex sync.Mutex
 
 const (
 	EventOrderCreated        = "order.created"
@@ -46,6 +56,7 @@ type FlashSaleOrderPayload struct {
 	CustomerID string          `json:"customer_id"`
 	Items      []FlashSaleItem `json:"items"`
 }
+
 type FlashSaleItem struct {
 	ItemID   string `json:"item_id"`
 	Quantity int32  `json:"quantity"`
@@ -93,10 +104,9 @@ func checkParam(p PublishEventReq) error {
 }
 
 func directQueue(ctx context.Context, p PublishEventReq) (err error) {
-	_, err = p.Channel.QueueDeclare(p.Queue, true, false, false, false, nil)
-	if err != nil {
-		return err
-	}
+	// QueueDeclare 已经在 broker.Connect() 启动时做过,这里不再做 —
+	// QueueDeclare 不是 thread-safe,如果放在 hot path 上,
+	// 500 个并发 goroutine 会把 channel 打坏。
 	jsonBody, err := json.Marshal(p.Body)
 	if err != nil {
 		return err
@@ -136,6 +146,10 @@ func fanOut(ctx context.Context, p PublishEventReq) (err error) {
 }
 
 func doPublish(ctx context.Context, ch *amqp.Channel, exchange, key string, mandatory bool, immediate bool, msg amqp.Publishing) error {
+	// 串行化所有 Channel.Publish 调用 (见 publishMutex 注释)
+	publishMutex.Lock()
+	defer publishMutex.Unlock()
+
 	if err := ch.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg); err != nil {
 		logging.Warnf(ctx, nil, "_publish_event_failed || exchange=%s || key=%s || msg=%v", exchange, key, msg)
 		return errors.Wrap(err, "publish event error")

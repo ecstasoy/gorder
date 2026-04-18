@@ -36,10 +36,10 @@ func main() {
 	}
 	defer shutdown(ctx)
 
-	application, stockGRPC, cleanup := service.NewApplication(ctx)
+	application, stockGRPC, redisClient, cleanup := service.NewApplication(ctx)
 	defer cleanup()
 
-	ch, closeCh := broker.Connect(
+	conn, ch, closeCh := broker.Connect(
 		viper.GetString("rabbitmq.user"),
 		viper.GetString("rabbitmq.password"),
 		viper.GetString("rabbitmq.host"),
@@ -47,12 +47,25 @@ func main() {
 	)
 	defer func() {
 		_ = closeCh()
-		_ = ch.Close()
 	}()
 
-	c := consumer.NewConsumer(application)
-	go c.Listen(ch)
-	go c.ListenFlashSaleOrders(ch)
+	// 两个 consumer 必须各自用独立的 channel — AMQP channel 不是 goroutine-safe,
+	// 共用会出现 503 "unexpected command received" 之类的协议错误。
+	orderPaidCh, err := conn.Channel()
+	if err != nil {
+		logrus.Fatalf("failed to open order paid consumer channel: %v", err)
+	}
+	defer orderPaidCh.Close()
+
+	flashSaleCh, err := conn.Channel()
+	if err != nil {
+		logrus.Fatalf("failed to open flash sale consumer channel: %v", err)
+	}
+	defer flashSaleCh.Close()
+
+	c := consumer.NewConsumer(application, redisClient)
+	go c.Listen(orderPaidCh)
+	go c.ListenFlashSaleOrders(flashSaleCh)
 
 	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
 
