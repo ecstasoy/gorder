@@ -93,9 +93,6 @@ func (c createFlashOrderHandler) Handle(ctx context.Context, cmd CreateFlashOrde
 	}
 
 	protoQty := convertor.NewItemWithQuantityConvertor().EntitiesToProtos(cmd.Items)
-	// 方案 B:flash SKU 是独立 product_id,DeductStock 直接 CAS 扣 MySQL,
-	// 不再需要 reserve/consume/release 三段式。卖不完的库存留在 flash 行,
-	// 由运维手动合并(后续可加 /flash-sale/merge-back 接口)。
 	if err = c.stockGRPC.DeductStock(ctx, protoQty); err != nil {
 		return nil, errors.Wrap(err, "failed to deduct flash stock")
 	}
@@ -106,6 +103,10 @@ func (c createFlashOrderHandler) Handle(ctx context.Context, cmd CreateFlashOrde
 		Status:     orderpb.OrderStatus_ORDER_STATUS_PENDING,
 	})
 	if err != nil {
+		// MySQL 已扣,Mongo 或 publish 失败 → 补偿回滚库存
+		if restoreErr := c.stockGRPC.RestoreStock(ctx, protoQty); restoreErr != nil {
+			logging.Errorf(ctx, nil, "RestoreStock compensation failed after persistAndPublish err: %v", restoreErr)
+		}
 		return nil, err
 	}
 
