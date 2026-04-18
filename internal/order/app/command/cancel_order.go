@@ -7,8 +7,8 @@ import (
 	"github.com/ecstasoy/gorder/common/decorator"
 	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
-	domain "github.com/ecstasoy/gorder/order/domain/order"
 	"github.com/ecstasoy/gorder/order/app/query"
+	domain "github.com/ecstasoy/gorder/order/domain/order"
 	"github.com/sirupsen/logrus"
 )
 

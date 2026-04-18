@@ -7,6 +7,7 @@ import (
 
 	"github.com/ecstasoy/gorder/common/broker"
 	grpcClient "github.com/ecstasoy/gorder/common/client"
+	"github.com/ecstasoy/gorder/common/handler/redis"
 	"github.com/ecstasoy/gorder/common/metrics"
 	"github.com/ecstasoy/gorder/order/adapters"
 	"github.com/ecstasoy/gorder/order/adapters/grpc"
@@ -14,6 +15,7 @@ import (
 	"github.com/ecstasoy/gorder/order/app/command"
 	"github.com/ecstasoy/gorder/order/app/query"
 	amqp "github.com/rabbitmq/amqp091-go"
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -21,34 +23,37 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
-func NewApplication(ctx context.Context) (app.Application, query.StockService, func()) {
+func NewApplication(ctx context.Context) (app.Application, query.StockService, *goredis.Client, func()) {
 	stockClient, err := grpcClient.NewStockGRPCClient(ctx)
 	if err != nil {
 		panic(err)
 	}
-	ch, closeCh := broker.Connect(
+	_, ch, closeCh := broker.Connect(
 		viper.GetString("rabbitmq.user"),
 		viper.GetString("rabbitmq.password"),
 		viper.GetString("rabbitmq.host"),
 		viper.GetString("rabbitmq.port"),
 	)
 	stockGRPC := grpc.NewStockGRPC(stockClient)
-	return newApplication(ctx, stockGRPC, ch), stockGRPC, func() {
+	redis.Init()
+	redisClient := redis.LocalClient()
+	return newApplication(ctx, stockGRPC, redisClient, ch), stockGRPC, redisClient, func() {
 		_ = grpcClient.CloseStockClient()
 		_ = closeCh()
-		_ = ch.Close()
 	}
 }
 
-func newApplication(_ context.Context, stockGRPC query.StockService, ch *amqp.Channel) app.Application {
+func newApplication(_ context.Context, stockGRPC query.StockService, redisClient *goredis.Client, ch *amqp.Channel) app.Application {
 	mongoClient := newMongoClient()
 	orderRepo := adapters.NewOrderRepositoryMongo(mongoClient)
 	metricsClient := metrics.TodoMetrics{}
+	logger := logrus.StandardLogger()
 	return app.Application{
 		Commands: app.Commands{
-			CreateOrder: command.NewCreateOrderHandler(orderRepo, stockGRPC, ch, logrus.StandardLogger(), metricsClient),
-			UpdateOrder: command.NewUpdateOrderHandler(orderRepo, logrus.StandardLogger(), metricsClient),
-			CancelOrder: command.NewCancelOrderHandler(orderRepo, stockGRPC, logrus.StandardLogger(), metricsClient),
+			CreateOrder:      command.NewCreateOrderHandler(orderRepo, stockGRPC, ch, logger, metricsClient),
+			UpdateOrder:      command.NewUpdateOrderHandler(orderRepo, logger, metricsClient),
+			CancelOrder:      command.NewCancelOrderHandler(orderRepo, stockGRPC, logger, metricsClient),
+			CreateFlashOrder: command.NewCreateFlashOrderHandler(orderRepo, stockGRPC, redisClient, ch, logger, metricsClient),
 		},
 		Queries: app.Queries{
 			GetCustomerOrder: query.NewGetCustomerOrderHandler(orderRepo, logrus.StandardLogger(), metricsClient),

@@ -74,6 +74,21 @@ func (G GRPCServer) UpdateOrder(ctx context.Context, request *orderpb.Order) (_ 
 	_, err = G.app.Commands.UpdateOrder.Handle(ctx, command.UpdateOrder{
 		Order: order,
 		UpdateFunc: func(ctx context.Context, oldOrder *domain.Order) (*domain.Order, error) {
+			// 特殊情况: Payment 服务在处理延迟后调 UpdateOrder 写 payment_link,
+			// 但订单已被 order.payment.timeout consumer 置为 CANCELLED。
+			// 场景约束: 请求的目标 status == PENDING (Payment 只会写 PENDING,
+			// 因为它的本意只是补一个 payment_link 到一个尚未支付的订单上)。
+			// 这种情况下 payment_link 已经无意义,幂等跳过,让 Payment 侧 ACK 消息。
+			//
+			// 注意: 这个 skip 只针对 "CANCELLED 订单被请求写 PENDING" 这个窄场景,
+			// 不会干扰 order.paid consumer 的退款路径 —— 那条路径走的是 Order 自己的
+			// consumer.handleMessage → UpdateOrder.Handle 直接调用, 不经过 gRPC server,
+			// 它会让 StatusConflictError 正常传回,从而触发 order.refund 发布。
+			if oldOrder.Status == orderpb.OrderStatus_ORDER_STATUS_CANCELLED &&
+				request.Status == orderpb.OrderStatus_ORDER_STATUS_PENDING {
+				logrus.Warnf("UpdateOrder gRPC: skipping stale payment_link write for cancelled order %s", oldOrder.ID)
+				return oldOrder, nil
+			}
 			if err := oldOrder.UpdateStatus(request.Status); err != nil {
 				return nil, err
 			}

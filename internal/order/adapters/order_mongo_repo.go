@@ -46,7 +46,7 @@ func (r *OrderRepositoryMongo) Create(ctx context.Context, order *domain.Order) 
 	defer deferLog(created, &err)
 
 	mongoID := primitive.NewObjectID()
-	write := r.marchalToModel(order)
+	write := r.marshalToModel(order)
 	write.MongoID = mongoID
 
 	_, err = r.collection().InsertOne(ctx, write)
@@ -139,7 +139,7 @@ func (r *OrderRepositoryMongo) Update(ctx context.Context, o *domain.Order, upda
 	return
 }
 
-func (r *OrderRepositoryMongo) marchalToModel(order *domain.Order) *orderModel {
+func (r *OrderRepositoryMongo) marshalToModel(order *domain.Order) *orderModel {
 	return &orderModel{
 		MongoID:     primitive.NewObjectID(),
 		ID:          order.ID,

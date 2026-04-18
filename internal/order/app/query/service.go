@@ -12,4 +12,5 @@ type StockService interface {
 	GetItems(ctx context.Context, itemIDs []string) ([]*orderpb.Item, error)
 	RestoreStock(ctx context.Context, items []*orderpb.ItemWithQuantity) error
 	WarmUpFlashStock(ctx context.Context, items []*orderpb.ItemWithQuantity, ttlSeconds int64) error
+	DeductStock(ctx context.Context, items []*orderpb.ItemWithQuantity) error
 }

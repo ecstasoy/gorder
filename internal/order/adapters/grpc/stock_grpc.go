@@ -57,3 +57,11 @@ func (s StockGRPC) WarmUpFlashStock(ctx context.Context, items []*orderpb.ItemWi
 
 	return err
 }
+
+func (s StockGRPC) DeductStock(ctx context.Context, items []*orderpb.ItemWithQuantity) (err error) {
+	_, dLog := logging.WhenRequest(ctx, "StockGRPC.DeductStock", items)
+	defer dLog(nil, &err)
+
+	_, err = s.client.DeductStock(ctx, &stockpb.DeductStockRequest{Items: items})
+	return err
+}

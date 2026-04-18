@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -22,10 +23,8 @@ import (
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	goredis "github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 )
-
-const idempotencyKeyPrefix = "idempotency:order:"
-const idempotencyKeyTTL = 24 * time.Hour
 
 type HTTPServer struct {
 	common.BaseResponse
@@ -52,25 +51,6 @@ func (H HTTPServer) PostCustomerCustomerIdOrders(c *gin.Context, customerId stri
 		return
 	}
 
-	// 幂等检查
-	idempotencyKey := c.GetHeader("Idempotency-Key")
-	if idempotencyKey != "" {
-		redisKey := idempotencyKeyPrefix + idempotencyKey
-		cached, getErr := redis.Get(c.Request.Context(), redis.LocalClient(), redisKey)
-		if getErr == nil {
-			// 命中缓存，直接返回上次结果
-			resp = dto.CreateOrderResponse{
-				OrderID:     cached,
-				CustomerID:  req.CustomerId,
-				RedirectURL: fmt.Sprintf("%s?customerID=%s&orderID=%s", "http://localhost:9090/payment/success", req.CustomerId, cached),
-			}
-			return
-		} else if !errors.Is(getErr, goredis.Nil) {
-			// Redis 故障，记录日志但不阻断流程
-			c.Set("idempotency_redis_err", getErr)
-		}
-	}
-
 	items := make([]*orderpb.ItemWithQuantity, 0, len(req.Items))
 	for _, item := range req.Items {
 		items = append(items, &orderpb.ItemWithQuantity{
@@ -91,14 +71,6 @@ func (H HTTPServer) PostCustomerCustomerIdOrders(c *gin.Context, customerId stri
 		OrderID:     r.OrderID,
 		CustomerID:  req.CustomerId,
 		RedirectURL: fmt.Sprintf("%s?customerID=%s&orderID=%s", "http://localhost:9090/payment/success", req.CustomerId, r.OrderID),
-	}
-
-	// 存入 Redis，供后续重复请求直接返回
-	if idempotencyKey != "" {
-		redisKey := idempotencyKeyPrefix + idempotencyKey
-		if _, setErr := redis.SetNX(c.Request.Context(), redis.LocalClient(), redisKey, r.OrderID, idempotencyKeyTTL); setErr != nil {
-			c.Set("idempotency_set_err", setErr)
-		}
 	}
 }
 
@@ -140,9 +112,19 @@ func (H HTTPServer) validate(req client.CreateOrderRequest) error {
 // -------------------------------以下为秒杀相关接口和逻辑--------------------------------
 
 const (
-	flashStockKeyPrefix  = "flash:stock:"
-	flashResultKeyPrefix = "flash:result:"
+	flashStockKeyPrefix    = "flash:stock:"
+	flashResultKeyPrefix   = "flash:result:"
+	flashOnceKeyPrefix     = "flash:once:"
+	flashOnceFallbackTTL   = 24 * time.Hour
+	flashResultPendingTTL  = 20 * time.Minute
+	flashResultContentType = "application/json"
 )
+
+type flashResultPayload struct {
+	Status  string `json:"status"`
+	OrderID string `json:"order_id,omitempty"`
+	Message string `json:"message,omitempty"`
+}
 
 type FlashSaleHTTPServer struct {
 	common.BaseResponse
@@ -208,39 +190,80 @@ func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
 		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "customer_id and items are required")
 		return
 	}
+	req.Items = packFlashSaleItems(req.Items)
+	for _, item := range req.Items {
+		if item.Quantity <= 0 {
+			err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
+				"quantity must be positive, got %d from %s", item.Quantity, item.ID)
+			return
+		}
+	}
 
 	ctx := c.Request.Context()
 	redisClient := redis.LocalClient()
+	token := uuid.New().String()
+	fallbackTTL := int64(flashOnceFallbackTTL / time.Second)
 
-	type done struct {
-		key string
-		qty int64
+	// 追踪已预留的 (stockKey, onceKey, qty),供任何后续步骤失败时回滚
+	type reservedEntry struct {
+		stockKey string
+		onceKey  string
+		qty      int64
 	}
-	var decremented []done
+	var reservedList []reservedEntry
 
+	rollbackAll := func() {
+		for _, r := range reservedList {
+			if rbErr := redis.FlashSaleRollback(ctx, redisClient, r.stockKey, r.onceKey, r.qty); rbErr != nil {
+				logrus.WithContext(ctx).Warnf("flash rollback failed for %s: %v", r.stockKey, rbErr)
+			}
+		}
+	}
+
+	// Step 1: 每个 item 用一条 Lua 原子完成 探活 + 一人一单 + 扣减 + 占位
 	for _, item := range req.Items {
-		key := flashStockKeyPrefix + item.ID
-		_, decrErr := redis.DecrStock(ctx, redisClient, key, int64(item.Quantity))
-		if decrErr != nil {
-			for _, d := range decremented {
-				_ = redisClient.IncrBy(ctx, key, d.qty)
-			}
-			if errors.Is(decrErr, redis.ErrStockKeyNotFound) {
-				err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
-					fmt.Sprintf("flash sale not active for item %s", item.ID))
-			} else if errors.Is(decrErr, redis.ErrStockInsufficient) {
-				err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
-					fmt.Sprintf("item %s is out of stock", item.ID))
-			} else {
-				err = hErrors.NewWithError(consts.ErrnoUnknownError, decrErr)
-			}
+		stockKey := flashStockKeyPrefix + item.ID
+		onceKey := flashOnceOrderKey(req.CustomerID, item.ID)
+
+		code, _, luaErr := redis.FlashSaleReserve(
+			ctx, redisClient,
+			stockKey, onceKey, token,
+			int64(item.Quantity),
+			fallbackTTL,
+		)
+		if luaErr != nil {
+			rollbackAll()
+			err = hErrors.NewWithError(consts.ErrnoUnknownError, luaErr)
 			return
 		}
-		decremented = append(decremented, done{key, int64(item.Quantity)})
+		switch code {
+		case redis.FlashReserveOK:
+			reservedList = append(reservedList, reservedEntry{
+				stockKey: stockKey, onceKey: onceKey, qty: int64(item.Quantity),
+			})
+		case redis.FlashReserveNotActive:
+			rollbackAll()
+			err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
+				"flash sale not active for item %s", item.ID)
+			return
+		case redis.FlashReserveDuplicate:
+			rollbackAll()
+			err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
+				"customer %s can only place one flash-sale order for item %s", req.CustomerID, item.ID)
+			return
+		case redis.FlashReserveInsufficient:
+			rollbackAll()
+			err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
+				"item %s is out of stock", item.ID)
+			return
+		default:
+			rollbackAll()
+			err = hErrors.NewWithMsgf(consts.ErrnoUnknownError, "unexpected flash reserve code %d", code)
+			return
+		}
 	}
 
-	token := uuid.New().String()
-
+	// Step 2: Publish
 	mqItems := make([]broker.FlashSaleItem, 0, len(req.Items))
 	for _, item := range req.Items {
 		mqItems = append(mqItems, broker.FlashSaleItem{ItemID: item.ID, Quantity: item.Quantity})
@@ -253,18 +276,17 @@ func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
 		Exchange: "",
 		Body:     broker.FlashSaleOrderPayload{Token: token, CustomerID: req.CustomerID, Items: mqItems},
 	}); pubErr != nil {
-		// MQ 失败，回滚 Redis
-		for _, d := range decremented {
-			_ = redisClient.IncrBy(ctx, d.key, d.qty)
-		}
+		rollbackAll()
 		err = hErrors.NewWithError(consts.ErrnoUnknownError, pubErr)
 		return
 	}
 
-	// 写 pending 占位，防止客户端立刻查到 404
-	_ = redisClient.Set(ctx, flashResultKeyPrefix+token, `{"status":"pending"}`, 0)
-	resp = flashOrderResponse{Token: token}
+	// Step 3: 写 pending 占位 (TTL 20 分钟)
+	_ = redisClient.Set(ctx, flashResultKeyPrefix+token,
+		mustMarshalFlashResult(flashResultPayload{Status: "pending"}),
+		flashResultPendingTTL)
 
+	resp = flashOrderResponse{Token: token}
 }
 
 func (h FlashSaleHTTPServer) GetFlashSaleResult(c *gin.Context) {
@@ -272,8 +294,51 @@ func (h FlashSaleHTTPServer) GetFlashSaleResult(c *gin.Context) {
 	val, err := redis.Get(c.Request.Context(), redis.LocalClient(), flashResultKeyPrefix+token)
 	if err != nil {
 		if errors.Is(err, goredis.Nil) {
-			val = "pending"
+			val = mustMarshalFlashResult(flashResultPayload{
+				Status:  "not_found",
+				Message: "token not found or result expired",
+			})
+		} else {
+			val = mustMarshalFlashResult(flashResultPayload{
+				Status:  "unknown_error",
+				Message: err.Error(),
+			})
 		}
 	}
-	c.Data(http.StatusOK, "application/json", []byte(val))
+	c.Data(http.StatusOK, flashResultContentType, []byte(val))
+}
+
+func packFlashSaleItems(items []flashSaleItem) []flashSaleItem {
+	if len(items) <= 1 {
+		return items
+	}
+	merged := make(map[string]int32, len(items))
+	order := make([]string, 0, len(items))
+	for _, item := range items {
+		if _, ok := merged[item.ID]; !ok {
+			order = append(order, item.ID)
+		}
+		merged[item.ID] += item.Quantity
+	}
+
+	packed := make([]flashSaleItem, 0, len(order))
+	for _, id := range order {
+		packed = append(packed, flashSaleItem{
+			ID:       id,
+			Quantity: merged[id],
+		})
+	}
+	return packed
+}
+
+func flashOnceOrderKey(customerID, itemID string) string {
+	return flashOnceKeyPrefix + customerID + ":" + itemID
+}
+
+func mustMarshalFlashResult(payload flashResultPayload) string {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return `{"status":"unknown_error","message":"failed to encode result payload"}`
+	}
+	return string(b)
 }

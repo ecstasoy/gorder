@@ -37,7 +37,7 @@ func NewUpdateOrderHandler(
 
 func (c updateOrderHandler) Handle(ctx context.Context, cmd UpdateOrder) (interface{}, error) {
 	var err error
-	defer logging.WhenCommandExecute(ctx, "UpdateOrderHandler.Handle", cmd, err)
+	defer logging.WhenCommandExecute(ctx, "UpdateOrderHandler.Handle", cmd.Order, err)
 	if cmd.UpdateFunc == nil {
 		logrus.Warnf("updateOrderHandler got nil UpdateFn, order=%#v", cmd.Order)
 		cmd.UpdateFunc = func(_ context.Context, order *domain.Order) (*domain.Order, error) { return order, nil }
