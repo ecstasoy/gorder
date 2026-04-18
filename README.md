@@ -98,7 +98,7 @@ internal/
 │
 ├── stock/                      # Stock Service
 │   ├── domain/stock/           # Repository interface, domain errors
-│   ├── app/                    # CheckIfItemsInStock, GetItems, RestoreStock, WarmUpFlashStock
+│   ├── app/                    # CheckIfItemsInStock, GetItems, RestoreStock, WarmUpFlashStock, DeductStock
 │   ├── adapters/               # MySQL repo, in-memory repo
 │   ├── infra/
 │   │   ├── persistent/         # MySQL queries + SQL builder
@@ -147,19 +147,24 @@ Client ──POST──> Order Service ──gRPC──> Stock Service (check & 
 
 ### Flash Sale
 
-Prevents overselling using Redis Lua atomic script:
+Prevents overselling using Redis Lua atomic script, plus a flash-sale-only one-user-one-order guard:
 
 ```
 1. Warmup:  POST /flash-sale/warmup
             └── gRPC WarmUpFlashStock → Redis SET flash:stock:{id} = quantity
 
 2. Purchase: POST /flash-sale/orders
-             ├── Redis Lua DECRBY (atomic, returns remaining)
+             ├── Redis SETNX flash:once:{customer}:{item}  (one user, one flash-sale order)
+             ├── Redis Lua DECRBY flash:stock:{id}         (atomic stock pre-deduct)
              ├── On success → publish to flash.order.created queue
-             ├── On failure → return "insufficient stock"
+             ├── On Redis/MQ failure → rollback flash:once key + pre-deducted Redis stock
              └── Return token for polling
 
-3. Result:  GET /flash-sale/result/{token}
+3. Async create:
+             └── Flash sale consumer → CreateFlashOrder
+                 └── Stock gRPC DeductStock (CAS) → MySQL deduct → MongoDB create order
+
+4. Result:  GET /flash-sale/result/{token}
             └── Read flash:result:{token} from Redis
 ```
 
@@ -175,9 +180,9 @@ CreateOrder → message to delay queue (TTL: 15 min)
               Consumer → CancelOrder + RestoreStock
 ```
 
-### Idempotency
+### Flash-sale Deduplication
 
-Order creation supports `Idempotency-Key` header. Results are cached in Redis for 24 hours to prevent duplicate orders from retried requests.
+Flash sale uses a dedicated Redis `SetNX` key (`flash:once:{customer}:{item}`), so "one user, one order" applies only within the flash-sale flow.
 
 ## Getting Started
 
@@ -256,6 +261,7 @@ curl -X POST http://localhost:9090/api/customer/u001/orders \
 | `GetItems` | Get item details |
 | `RestoreStock` | Restore stock on cancellation |
 | `WarmUpFlashStock` | Pre-load flash sale stock to Redis |
+| `DeductStock` | Pure CAS deduction for flash sale orders |
 
 ### Payment Service (HTTP :9092)
 
