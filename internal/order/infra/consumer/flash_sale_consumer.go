@@ -105,9 +105,6 @@ func (c *Consumer) handleFlashSaleOrder(ch *amqp.Channel, msg amqp.Delivery, q a
 	_ = c.redisClient.Set(ctx, resultKey, string(b), flashResultTTL)
 }
 
-// compensateRedis 把 Lua 阶段占的 flash:stock 预扣和 flash:once 释放,让用户能重试。
-// CreateFlashOrder 内部如果在 Mongo 入库阶段失败,已经调过 gRPC ReleaseFlashStock 归还 MySQL 了,
-// 这里只需要回补 Redis 两个 key。
 func (c *Consumer) compensateRedis(ctx context.Context, payload *broker.FlashSaleOrderPayload) {
 	for _, item := range payload.Items {
 		if err := c.redisClient.IncrBy(ctx, flashStockKeyPrefix+item.ItemID, int64(item.Quantity)).Err(); err != nil {
