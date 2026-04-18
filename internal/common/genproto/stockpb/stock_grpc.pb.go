@@ -8,6 +8,7 @@ package stockpb
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -23,6 +24,7 @@ const (
 	StockService_CheckIfItemsInStock_FullMethodName = "/stockpb.StockService/CheckIfItemsInStock"
 	StockService_RestoreStock_FullMethodName        = "/stockpb.StockService/RestoreStock"
 	StockService_WarmUpFlashStock_FullMethodName    = "/stockpb.StockService/WarmUpFlashStock"
+	StockService_DeductStock_FullMethodName         = "/stockpb.StockService/DeductStock"
 )
 
 // StockServiceClient is the client API for StockService service.
@@ -33,6 +35,7 @@ type StockServiceClient interface {
 	CheckIfItemsInStock(ctx context.Context, in *CheckIfItemsInStockRequest, opts ...grpc.CallOption) (*CheckIfItemsInStockResponse, error)
 	RestoreStock(ctx context.Context, in *RestoreStockRequest, opts ...grpc.CallOption) (*RestoreStockResponse, error)
 	WarmUpFlashStock(ctx context.Context, in *WarmUpFlashStockRequest, opts ...grpc.CallOption) (*WarmUpFlashStockResponse, error)
+	DeductStock(ctx context.Context, in *DeductStockRequest, opts ...grpc.CallOption) (*DeductStockResponse, error)
 }
 
 type stockServiceClient struct {
@@ -83,6 +86,16 @@ func (c *stockServiceClient) WarmUpFlashStock(ctx context.Context, in *WarmUpFla
 	return out, nil
 }
 
+func (c *stockServiceClient) DeductStock(ctx context.Context, in *DeductStockRequest, opts ...grpc.CallOption) (*DeductStockResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeductStockResponse)
+	err := c.cc.Invoke(ctx, StockService_DeductStock_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StockServiceServer is the server API for StockService service.
 // All implementations should embed UnimplementedStockServiceServer
 // for forward compatibility.
@@ -91,6 +104,7 @@ type StockServiceServer interface {
 	CheckIfItemsInStock(context.Context, *CheckIfItemsInStockRequest) (*CheckIfItemsInStockResponse, error)
 	RestoreStock(context.Context, *RestoreStockRequest) (*RestoreStockResponse, error)
 	WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error)
+	DeductStock(context.Context, *DeductStockRequest) (*DeductStockResponse, error)
 }
 
 // UnimplementedStockServiceServer should be embedded to have
@@ -111,6 +125,9 @@ func (UnimplementedStockServiceServer) RestoreStock(context.Context, *RestoreSto
 }
 func (UnimplementedStockServiceServer) WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WarmUpFlashStock not implemented")
+}
+func (UnimplementedStockServiceServer) DeductStock(context.Context, *DeductStockRequest) (*DeductStockResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeductStock not implemented")
 }
 func (UnimplementedStockServiceServer) testEmbeddedByValue() {}
 
@@ -204,6 +221,24 @@ func _StockService_WarmUpFlashStock_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StockService_DeductStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeductStockRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).DeductStock(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_DeductStock_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).DeductStock(ctx, req.(*DeductStockRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StockService_ServiceDesc is the grpc.ServiceDesc for StockService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -226,6 +261,10 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WarmUpFlashStock",
 			Handler:    _StockService_WarmUpFlashStock_Handler,
+		},
+		{
+			MethodName: "DeductStock",
+			Handler:    _StockService_DeductStock_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

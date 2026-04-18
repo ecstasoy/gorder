@@ -13,6 +13,7 @@ type Application struct {
 type Commands struct {
 	RestoreStock     command.RestoreStockHandler
 	WarmUpFlashStock command.WarmUpFlashStockHandler
+	DeductStock      command.DeductStockHandler
 }
 
 type Queries struct {

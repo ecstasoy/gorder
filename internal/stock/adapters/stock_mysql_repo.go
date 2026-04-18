@@ -15,11 +15,6 @@ type MySQLStockRepository struct {
 	db *persistent.MySQL
 }
 
-func (m MySQLStockRepository) GetItems(ctx context.Context, ids []string) ([]*entity.Item, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
 func NewMySQLStockRepository(db *persistent.MySQL) *MySQLStockRepository {
 	return &MySQLStockRepository{db: db}
 }
@@ -158,4 +153,54 @@ func getIDFromEntities(items []*entity.ItemWithQuantity) []string {
 		ids = append(ids, i.ID)
 	}
 	return ids
+}
+
+// UpsertStock 把指定 product_id 的 quantity SET 为给定值。秒杀 warmup 用,
+// 把 flash SKU 行的库存重置为本场活动总量。row 必须已存在(init.sql 里 seed)。
+func (m MySQLStockRepository) UpsertStock(ctx context.Context, items []*entity.ItemWithQuantity) error {
+	return m.db.StartTransaction(func(tx *gorm.DB) error {
+		for _, item := range items {
+			// 先确认 row 存在(不能用 UPDATE 的 RowsAffected 判断,
+			// MySQL 默认对"值未变化"的 UPDATE 也返回 RowsAffected=0,
+			// 会和"row 不存在"无法区分)
+			var count int64
+			if err := tx.WithContext(ctx).
+				Model(&persistent.StockModel{}).
+				Where("product_id = ?", item.ID).
+				Count(&count).Error; err != nil {
+				return errors.Wrapf(err, "UpsertStock: count failed for %s", item.ID)
+			}
+			if count == 0 {
+				return errors.Errorf("UpsertStock: product_id %s not seeded in o_stock", item.ID)
+			}
+			if err := tx.WithContext(ctx).
+				Model(&persistent.StockModel{}).
+				Where("product_id = ?", item.ID).
+				UpdateColumn("quantity", item.Quantity).Error; err != nil {
+				return errors.Wrapf(err, "UpsertStock: update failed for %s", item.ID)
+			}
+		}
+		return nil
+	})
+}
+
+// DeductStock 纯 CAS 扣减,不查 Stripe 元数据。秒杀消费者(已经从 flash:meta
+// 拿到价格)和未来任何"只想扣库存"的场景都用它,替代 CheckIfItemsInStock 的
+// "查 Stripe + 扣库存"组合。
+func (m MySQLStockRepository) DeductStock(ctx context.Context, items []*entity.ItemWithQuantity) error {
+	return m.db.StartTransaction(func(tx *gorm.DB) error {
+		for _, item := range items {
+			res := tx.WithContext(ctx).
+				Model(&persistent.StockModel{}).
+				Where("product_id = ? AND quantity >= ?", item.ID, item.Quantity).
+				UpdateColumn("quantity", gorm.Expr("quantity - ?", item.Quantity))
+			if res.Error != nil {
+				return errors.Wrapf(res.Error, "DeductStock: failed for %s", item.ID)
+			}
+			if res.RowsAffected == 0 {
+				return errors.Errorf("DeductStock: insufficient stock for %s (want %d)", item.ID, item.Quantity)
+			}
+		}
+		return nil
+	})
 }

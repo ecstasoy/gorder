@@ -9,7 +9,6 @@ import (
 )
 
 type Repository interface {
-	GetItems(ctx context.Context, ids []string) ([]*entity.Item, error)
 	GetStock(ctx context.Context, ids []string) ([]*entity.ItemWithQuantity, error)
 	UpdateStock(
 		ctx context.Context,
@@ -21,6 +20,10 @@ type Repository interface {
 		) ([]*entity.ItemWithQuantity, error),
 	) error
 	RestoreStock(ctx context.Context, items []*entity.ItemWithQuantity) error
+	DeductStock(ctx context.Context, items []*entity.ItemWithQuantity) error
+	// UpsertStock 把指定 product_id 的 quantity SET 为给定值(不是增量)。
+	// 用于秒杀 warmup —— 每次活动开始时把 flash SKU 的库存重置为本场活动的总量。
+	UpsertStock(ctx context.Context, items []*entity.ItemWithQuantity) error
 }
 
 type NotFoundError struct {

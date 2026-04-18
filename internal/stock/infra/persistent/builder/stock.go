@@ -28,20 +28,20 @@ func (s *Stock) FormatArg() (string, error) {
 func (s *Stock) Fill(db *gorm.DB) *gorm.DB {
 	db = s.fillWhere(db)
 	if s.OrderBy != "" {
-		db = db.Order(s.Order)
+		db = db.Order(s.OrderBy)
 	}
 	return db
 }
 
 func (s *Stock) fillWhere(db *gorm.DB) *gorm.DB {
 	if len(s.ID) > 0 {
-		db = db.Where("ID in (?)", s.ID)
+		db = db.Where("id in (?)", s.ID)
 	}
 	if len(s.ProductID) > 0 {
 		db = db.Where("product_id in (?)", s.ProductID)
 	}
 	if len(s.Version) > 0 {
-		db = db.Where("Version in (?)", s.Version)
+		db = db.Where("version in (?)", s.Version)
 	}
 	if len(s.Quantity) > 0 {
 		db = s.fillQuantityGT(db)

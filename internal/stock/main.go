@@ -11,7 +11,6 @@ import (
 	"github.com/ecstasoy/gorder/common/tracing"
 	"github.com/ecstasoy/gorder/stock/ports"
 	"github.com/ecstasoy/gorder/stock/service"
-	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -34,7 +33,8 @@ func main() {
 	}
 	defer shutdown(ctx)
 
-	application := service.NewApplication(ctx)
+	application, cleanup := service.NewApplication(ctx)
+	defer cleanup()
 
 	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
 
@@ -50,17 +50,7 @@ func main() {
 		server.RunGRPCServer(serviceName, func(server *grpc.Server) {
 			stockpb.RegisterStockServiceServer(server, ports.NewGRPCServer(application))
 		})
-	case "http":
-		server.RunHTTPServer(serviceName, func(router *gin.Engine) {
-			ports.RegisterHandlersWithOptions(router, HTTPServer{
-				app: application,
-			}, ports.GinServerOptions{
-				BaseURL:      "/api",
-				Middlewares:  nil,
-				ErrorHandler: nil,
-			})
-		})
 	default:
-		panic("unknown server type")
+		panic("unknown server type: " + serverType)
 	}
 }

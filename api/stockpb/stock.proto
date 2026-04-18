@@ -10,6 +10,7 @@ service StockService {
   rpc CheckIfItemsInStock(CheckIfItemsInStockRequest) returns (CheckIfItemsInStockResponse);
   rpc RestoreStock(RestoreStockRequest) returns (RestoreStockResponse);
   rpc WarmUpFlashStock(WarmUpFlashStockRequest) returns (WarmUpFlashStockResponse);
+  rpc DeductStock(DeductStockRequest) returns (DeductStockResponse);
 }
 
 message RestoreStockRequest {
@@ -41,3 +42,8 @@ message WarmUpFlashStockRequest {
 }
 
 message WarmUpFlashStockResponse {}
+
+message DeductStockRequest {
+  repeated orderpb.ItemWithQuantity Items = 1;
+}
+message DeductStockResponse {}

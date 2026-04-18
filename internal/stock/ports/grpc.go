@@ -81,3 +81,17 @@ func (G GRPCServer) WarmUpFlashStock(ctx context.Context, request *stockpb.WarmU
 	}
 	return &stockpb.WarmUpFlashStockResponse{}, nil
 }
+
+func (G GRPCServer) DeductStock(ctx context.Context, request *stockpb.DeductStockRequest) (*stockpb.DeductStockResponse, error) {
+	_, span := tracing.Start(ctx, "grpc.DeductStock")
+	defer span.End()
+
+	_, err := G.app.Commands.DeductStock.Handle(ctx, command.DeductStock{
+		Items: convertor.NewItemWithQuantityConvertor().ProtosToEntities(request.Items),
+	})
+	if err != nil {
+		logrus.Errorf("error handling DeductStock command: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stockpb.DeductStockResponse{}, nil
+}

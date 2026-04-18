@@ -14,21 +14,26 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func NewApplication(_ context.Context) app.Application {
+func NewApplication(_ context.Context) (app.Application, func()) {
 	db := persistent.NewMySQL()
 	stockRepo := adapters.NewMySQLStockRepository(db)
 	stripeAPI := integration.NewStripeAPI()
 	metricsClient := metrics.TodoMetrics{}
 	redis.Init()
 	redisClient := redis.LocalClient()
-	return app.Application{
+	logger := logrus.StandardLogger()
+
+	application := app.Application{
 		Commands: app.Commands{
-			RestoreStock:     command.NewRestoreStockHandler(stockRepo, logrus.StandardLogger(), metricsClient),
-			WarmUpFlashStock: command.NewWarmUpFlashStockHandler(redisClient, logrus.StandardLogger(), metricsClient),
+			RestoreStock:     command.NewRestoreStockHandler(stockRepo, logger, metricsClient),
+			WarmUpFlashStock: command.NewWarmUpFlashStockHandler(stockRepo, stripeAPI, redisClient, logger, metricsClient),
+			DeductStock:      command.NewDeductStockHandler(stockRepo, logger, metricsClient),
 		},
 		Queries: app.Queries{
-			CheckIfItemsInStock: query.NewCheckIfItemsInStockHandler(stockRepo, stripeAPI, logrus.StandardLogger(), metricsClient),
-			GetItems:            query.NewGetItemsHandler(stockRepo, logrus.StandardLogger(), metricsClient),
+			CheckIfItemsInStock: query.NewCheckIfItemsInStockHandler(stockRepo, stripeAPI, logger, metricsClient),
+			GetItems:            query.NewGetItemsHandler(stripeAPI, logger, metricsClient),
 		},
 	}
+
+	return application, func() {}
 }

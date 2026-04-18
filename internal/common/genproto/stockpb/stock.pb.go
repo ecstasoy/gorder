@@ -7,12 +7,13 @@
 package stockpb
 
 import (
-	orderpb "github.com/ecstasoy/gorder/common/genproto/orderpb"
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	orderpb "github.com/ecstasoy/gorder/common/genproto/orderpb"
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -374,6 +375,86 @@ func (*WarmUpFlashStockResponse) Descriptor() ([]byte, []int) {
 	return file_stockpb_stock_proto_rawDescGZIP(), []int{7}
 }
 
+type DeductStockRequest struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	Items         []*orderpb.ItemWithQuantity `protobuf:"bytes,1,rep,name=Items,proto3" json:"Items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeductStockRequest) Reset() {
+	*x = DeductStockRequest{}
+	mi := &file_stockpb_stock_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeductStockRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeductStockRequest) ProtoMessage() {}
+
+func (x *DeductStockRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeductStockRequest.ProtoReflect.Descriptor instead.
+func (*DeductStockRequest) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DeductStockRequest) GetItems() []*orderpb.ItemWithQuantity {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type DeductStockResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeductStockResponse) Reset() {
+	*x = DeductStockResponse{}
+	mi := &file_stockpb_stock_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeductStockResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeductStockResponse) ProtoMessage() {}
+
+func (x *DeductStockResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeductStockResponse.ProtoReflect.Descriptor instead.
+func (*DeductStockResponse) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{9}
+}
+
 var File_stockpb_stock_proto protoreflect.FileDescriptor
 
 const file_stockpb_stock_proto_rawDesc = "" +
@@ -396,12 +477,16 @@ const file_stockpb_stock_proto_rawDesc = "" +
 	"\n" +
 	"TTLSeconds\x18\x02 \x01(\x03R\n" +
 	"TTLSeconds\"\x1a\n" +
-	"\x18WarmUpFlashStockResponse2\xd7\x02\n" +
+	"\x18WarmUpFlashStockResponse\"E\n" +
+	"\x12DeductStockRequest\x12/\n" +
+	"\x05Items\x18\x01 \x03(\v2\x19.orderpb.ItemWithQuantityR\x05Items\"\x15\n" +
+	"\x13DeductStockResponse2\xa1\x03\n" +
 	"\fStockService\x12?\n" +
 	"\bGetItems\x12\x18.stockpb.GetItemsRequest\x1a\x19.stockpb.GetItemsResponse\x12`\n" +
 	"\x13CheckIfItemsInStock\x12#.stockpb.CheckIfItemsInStockRequest\x1a$.stockpb.CheckIfItemsInStockResponse\x12K\n" +
 	"\fRestoreStock\x12\x1c.stockpb.RestoreStockRequest\x1a\x1d.stockpb.RestoreStockResponse\x12W\n" +
-	"\x10WarmUpFlashStock\x12 .stockpb.WarmUpFlashStockRequest\x1a!.stockpb.WarmUpFlashStockResponseB4Z2github.com/ecstasoy/gorder/common/genproto/stockpbb\x06proto3"
+	"\x10WarmUpFlashStock\x12 .stockpb.WarmUpFlashStockRequest\x1a!.stockpb.WarmUpFlashStockResponse\x12H\n" +
+	"\vDeductStock\x12\x1b.stockpb.DeductStockRequest\x1a\x1c.stockpb.DeductStockResponseB4Z2github.com/ecstasoy/gorder/common/genproto/stockpbb\x06proto3"
 
 var (
 	file_stockpb_stock_proto_rawDescOnce sync.Once
@@ -415,7 +500,7 @@ func file_stockpb_stock_proto_rawDescGZIP() []byte {
 	return file_stockpb_stock_proto_rawDescData
 }
 
-var file_stockpb_stock_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_stockpb_stock_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_stockpb_stock_proto_goTypes = []any{
 	(*RestoreStockRequest)(nil),         // 0: stockpb.RestoreStockRequest
 	(*RestoreStockResponse)(nil),        // 1: stockpb.RestoreStockResponse
@@ -425,28 +510,33 @@ var file_stockpb_stock_proto_goTypes = []any{
 	(*CheckIfItemsInStockResponse)(nil), // 5: stockpb.CheckIfItemsInStockResponse
 	(*WarmUpFlashStockRequest)(nil),     // 6: stockpb.WarmUpFlashStockRequest
 	(*WarmUpFlashStockResponse)(nil),    // 7: stockpb.WarmUpFlashStockResponse
-	(*orderpb.ItemWithQuantity)(nil),    // 8: orderpb.ItemWithQuantity
-	(*orderpb.Item)(nil),                // 9: orderpb.Item
+	(*DeductStockRequest)(nil),          // 8: stockpb.DeductStockRequest
+	(*DeductStockResponse)(nil),         // 9: stockpb.DeductStockResponse
+	(*orderpb.ItemWithQuantity)(nil),    // 10: orderpb.ItemWithQuantity
+	(*orderpb.Item)(nil),                // 11: orderpb.Item
 }
 var file_stockpb_stock_proto_depIdxs = []int32{
-	8, // 0: stockpb.RestoreStockRequest.Items:type_name -> orderpb.ItemWithQuantity
-	9, // 1: stockpb.GetItemsResponse.Items:type_name -> orderpb.Item
-	8, // 2: stockpb.CheckIfItemsInStockRequest.Items:type_name -> orderpb.ItemWithQuantity
-	9, // 3: stockpb.CheckIfItemsInStockResponse.Items:type_name -> orderpb.Item
-	8, // 4: stockpb.WarmUpFlashStockRequest.Items:type_name -> orderpb.ItemWithQuantity
-	2, // 5: stockpb.StockService.GetItems:input_type -> stockpb.GetItemsRequest
-	4, // 6: stockpb.StockService.CheckIfItemsInStock:input_type -> stockpb.CheckIfItemsInStockRequest
-	0, // 7: stockpb.StockService.RestoreStock:input_type -> stockpb.RestoreStockRequest
-	6, // 8: stockpb.StockService.WarmUpFlashStock:input_type -> stockpb.WarmUpFlashStockRequest
-	3, // 9: stockpb.StockService.GetItems:output_type -> stockpb.GetItemsResponse
-	5, // 10: stockpb.StockService.CheckIfItemsInStock:output_type -> stockpb.CheckIfItemsInStockResponse
-	1, // 11: stockpb.StockService.RestoreStock:output_type -> stockpb.RestoreStockResponse
-	7, // 12: stockpb.StockService.WarmUpFlashStock:output_type -> stockpb.WarmUpFlashStockResponse
-	9, // [9:13] is the sub-list for method output_type
-	5, // [5:9] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	10, // 0: stockpb.RestoreStockRequest.Items:type_name -> orderpb.ItemWithQuantity
+	11, // 1: stockpb.GetItemsResponse.Items:type_name -> orderpb.Item
+	10, // 2: stockpb.CheckIfItemsInStockRequest.Items:type_name -> orderpb.ItemWithQuantity
+	11, // 3: stockpb.CheckIfItemsInStockResponse.Items:type_name -> orderpb.Item
+	10, // 4: stockpb.WarmUpFlashStockRequest.Items:type_name -> orderpb.ItemWithQuantity
+	10, // 5: stockpb.DeductStockRequest.Items:type_name -> orderpb.ItemWithQuantity
+	2,  // 6: stockpb.StockService.GetItems:input_type -> stockpb.GetItemsRequest
+	4,  // 7: stockpb.StockService.CheckIfItemsInStock:input_type -> stockpb.CheckIfItemsInStockRequest
+	0,  // 8: stockpb.StockService.RestoreStock:input_type -> stockpb.RestoreStockRequest
+	6,  // 9: stockpb.StockService.WarmUpFlashStock:input_type -> stockpb.WarmUpFlashStockRequest
+	8,  // 10: stockpb.StockService.DeductStock:input_type -> stockpb.DeductStockRequest
+	3,  // 11: stockpb.StockService.GetItems:output_type -> stockpb.GetItemsResponse
+	5,  // 12: stockpb.StockService.CheckIfItemsInStock:output_type -> stockpb.CheckIfItemsInStockResponse
+	1,  // 13: stockpb.StockService.RestoreStock:output_type -> stockpb.RestoreStockResponse
+	7,  // 14: stockpb.StockService.WarmUpFlashStock:output_type -> stockpb.WarmUpFlashStockResponse
+	9,  // 15: stockpb.StockService.DeductStock:output_type -> stockpb.DeductStockResponse
+	11, // [11:16] is the sub-list for method output_type
+	6,  // [6:11] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_stockpb_stock_proto_init() }
@@ -460,7 +550,7 @@ func file_stockpb_stock_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_stockpb_stock_proto_rawDesc), len(file_stockpb_stock_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
