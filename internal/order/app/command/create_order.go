@@ -76,28 +76,13 @@ func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*Creat
 		return nil, err
 	}
 
-	o, err := c.orderRepo.Create(ctx, &domain.Order{
+	o, err := persistAndPublish(ctx, c.orderRepo, c.channel, &domain.Order{
 		CustomerID: cmd.CustomerID,
 		Items:      validItems,
 		Status:     orderpb.OrderStatus_ORDER_STATUS_PENDING,
 	})
-
 	if err != nil {
 		return nil, err
-	}
-
-	if err = broker.PublishEvent(ctx, broker.PublishEventReq{
-		Channel:  c.channel,
-		Routing:  broker.Direct,
-		Queue:    broker.EventOrderCreated,
-		Exchange: "",
-		Body:     o,
-	}); err != nil {
-		return nil, errors.Wrapf(err, "Publish event error, q.Name = %s", broker.EventOrderCreated)
-	}
-
-	if err = broker.PublishToDelayQueue(ctx, c.channel, o); err != nil {
-		logrus.WithContext(ctx).Warnf("failed to publish payment timeout message, orderID=%s: %v", o.ID, err)
 	}
 
 	return &CreateOrderResult{OrderID: o.ID}, nil
@@ -113,6 +98,29 @@ func (c createOrderHandler) validate(ctx context.Context, items []*entity.ItemWi
 		return nil, status.Convert(err).Err()
 	}
 	return convertor.NewItemConvertor().ProtosToEntities(resp.Items), nil
+}
+
+func persistAndPublish(ctx context.Context, orderRepo domain.Repository, ch *amqp.Channel, order *domain.Order) (*domain.Order, error) {
+	o, err := orderRepo.Create(ctx, order)
+	if err != nil {
+		return nil, errors.Wrap(err, "create order in mongo")
+	}
+
+	if err = broker.PublishEvent(ctx, broker.PublishEventReq{
+		Channel:  ch,
+		Routing:  broker.Direct,
+		Queue:    broker.EventOrderCreated,
+		Exchange: "",
+		Body:     o,
+	}); err != nil {
+		return nil, errors.Wrapf(err, "publish order.created for order %s", o.ID)
+	}
+
+	if err = broker.PublishToDelayQueue(ctx, ch, o); err != nil {
+		logrus.WithContext(ctx).Warnf("failed to publish payment timeout, orderID=%s: %v", o.ID, err)
+	}
+
+	return o, nil
 }
 
 func packItems(items []*entity.ItemWithQuantity) []*entity.ItemWithQuantity {

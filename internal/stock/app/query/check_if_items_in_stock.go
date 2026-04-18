@@ -44,18 +44,6 @@ func NewCheckIfItemsInStockHandler(
 	)
 }
 
-// Stub: ProductID → PriceID 映射
-var stub = map[string]string{
-	// 使用真实的 Stripe PriceID
-	"prod_U9k6VcIEwQb83T": "price_1TBQcBBMfcQ39REZYgwPgjcd",
-	"prod_U9k6gLFpAGaHQl": "price_1TBQcBBMfcQ39REZYgwPgjcd",
-	"item1":               "price_1TBQcBBMfcQ39REZYgwPgjcd",
-	"item2":               "price_1TBQcBBMfcQ39REZYgwPgjcd",
-	"item3":               "price_1TBQcBBMfcQ39REZYgwPgjcd",
-	// 默认价格
-	"default": "price_1TBQcBBMfcQ39REZYgwPgjcd",
-}
-
 func (c checkIfItemsInStockHandler) Handle(ctx context.Context, query CheckIfItemsInStock) ([]*entity.Item, error) {
 	var err error
 
@@ -142,13 +130,4 @@ func (c checkIfItemsInStockHandler) checkStock(ctx context.Context, query []*ent
 		})
 	}
 	return domain.ExceedStockError{FailedOn: failedOn}
-}
-
-func getStubPriceID(id string) string {
-	priceId, ok := stub[id]
-	if !ok {
-		logrus.Warnf("No price mapping for product %s, using default", id)
-		priceId = stub["default"]
-	}
-	return priceId
 }

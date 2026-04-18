@@ -39,3 +39,24 @@ go.work.sum
 mysql_data
 **/log
 *.log
+
+# Claude Code
+.claude/
+
+# Obsidian
+.obsidian/
+
+# Data / runtime
+data/
+
+# Graphify output
+graphify-out/
+
+# Excalidraw skill (local plugin)
+excalidraw-diagram-skill/
+
+# Homework / personal files
+*.docx
+
+# Challenge code (unrelated to project)
+internal/challenge/
