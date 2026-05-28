@@ -23,7 +23,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
-func NewApplication(ctx context.Context) (app.Application, query.StockService, *goredis.Client, func()) {
+func NewApplication(ctx context.Context) (app.Application, query.StockService, *goredis.Client, *mongo.Client, func()) {
 	stockClient, err := grpcClient.NewStockGRPCClient(ctx)
 	if err != nil {
 		panic(err)
@@ -37,14 +37,14 @@ func NewApplication(ctx context.Context) (app.Application, query.StockService, *
 	stockGRPC := grpc.NewStockGRPC(stockClient)
 	redis.Init()
 	redisClient := redis.LocalClient()
-	return newApplication(ctx, stockGRPC, redisClient, ch), stockGRPC, redisClient, func() {
+	mongoClient := newMongoClient()
+	return newApplication(ctx, stockGRPC, redisClient, ch, mongoClient), stockGRPC, redisClient, mongoClient, func() {
 		_ = grpcClient.CloseStockClient()
 		_ = closeCh()
 	}
 }
 
-func newApplication(_ context.Context, stockGRPC query.StockService, redisClient *goredis.Client, ch *amqp.Channel) app.Application {
-	mongoClient := newMongoClient()
+func newApplication(_ context.Context, stockGRPC query.StockService, redisClient *goredis.Client, ch *amqp.Channel, mongoClient *mongo.Client) app.Application {
 	orderRepo := adapters.NewOrderRepositoryMongo(mongoClient)
 	metricsClient := metrics.NewPrometheusMetricsClient()
 	logger := logrus.StandardLogger()

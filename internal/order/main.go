@@ -12,6 +12,7 @@ import (
 	"github.com/ecstasoy/gorder/common/server"
 	"github.com/ecstasoy/gorder/common/tracing"
 	"github.com/ecstasoy/gorder/order/infra/consumer"
+	"github.com/ecstasoy/gorder/order/infra/outbox"
 	"github.com/ecstasoy/gorder/order/ports"
 	"github.com/ecstasoy/gorder/order/service"
 	"github.com/gin-gonic/gin"
@@ -36,7 +37,7 @@ func main() {
 	}
 	defer shutdown(ctx)
 
-	application, stockGRPC, redisClient, cleanup := service.NewApplication(ctx)
+	application, stockGRPC, redisClient, mongoClient, cleanup := service.NewApplication(ctx)
 	defer cleanup()
 
 	conn, ch, closeCh := broker.Connect(
@@ -63,10 +64,26 @@ func main() {
 	}
 	defer flashSaleCh.Close()
 
+	outboxCh, err := conn.Channel()
+	if err != nil {
+		logrus.Fatalf("failed to open outbox publisher channel: %v", err)
+	}
+	defer outboxCh.Close()
+
 	publisher := broker.NewRabbitMQPublisher(ch)
 	c := consumer.NewConsumer(application, redisClient, publisher)
 	go c.Listen(orderPaidCh)
 	go c.ListenFlashSaleOrders(flashSaleCh)
+
+	// ADR-0001 Step 1: outbox 基础设施就位。collection 暂时无 caller 写入，worker 跑空轮询。
+	// Step 2 会切第一条事件 (order.created) 到 outbox。
+	outboxRepo, err := outbox.NewMongoOutboxRepo(ctx, mongoClient)
+	if err != nil {
+		logrus.Fatalf("failed to create outbox repo: %v", err)
+	}
+	outboxPublisher := broker.NewRabbitMQPublisher(outboxCh)
+	outboxWorker := outbox.NewWorker(outboxRepo, outboxPublisher)
+	go outboxWorker.Run(ctx)
 
 	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
 
