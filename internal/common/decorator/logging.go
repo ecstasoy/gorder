@@ -45,9 +45,9 @@ func (q commandLoggingDecorator[C, R]) Handle(ctx context.Context, cmd C) (resul
 	}
 	defer func() {
 		if err == nil {
-			logging.Infof(ctx, fields, "%s", "Query execute successfully")
+			logging.Infof(ctx, fields, "%s", "Command execute successfully")
 		} else {
-			logging.Errorf(ctx, fields, "Failed to execute query, err=%v", err)
+			logging.Errorf(ctx, fields, "Failed to execute command, err=%v", err)
 		}
 	}()
 	result, err = q.base.Handle(ctx, cmd)

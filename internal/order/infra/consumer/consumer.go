@@ -22,12 +22,14 @@ import (
 type Consumer struct {
 	app         app.Application
 	redisClient *goredis.Client
+	publisher   broker.Publisher
 }
 
-func NewConsumer(app app.Application, redisClient *goredis.Client) *Consumer {
+func NewConsumer(app app.Application, redisClient *goredis.Client, publisher broker.Publisher) *Consumer {
 	return &Consumer{
 		app:         app,
 		redisClient: redisClient,
+		publisher:   publisher,
 	}
 }
 
@@ -145,12 +147,9 @@ func (c *Consumer) handleMessage(ch *amqp.Channel, msg amqp.Delivery, q amqp.Que
 		if stderrors.As(err, &conflictErr) {
 			// 状态冲突：订单已被取消但用户付款成功，发起退款
 			logging.Warnf(ctx, nil, "Status conflict for order %s, publishing refund event", o.ID)
-			refundErr := broker.PublishEvent(ctx, broker.PublishEventReq{
-				Channel:  ch,
-				Routing:  broker.Direct,
-				Queue:    broker.EventOrderRefund,
-				Exchange: "",
-				Body: broker.OrderRefundPayload{
+			refundErr := c.publisher.Publish(ctx, broker.DomainEvent{
+				Dest: broker.EventOrderRefund,
+				Data: broker.OrderRefundPayload{
 					OrderID:         o.ID,
 					CustomerID:      o.CustomerID,
 					PaymentIntentID: paid.PaymentIntentID,

@@ -21,10 +21,23 @@ func RunHTTPServerOnAddr(addr string, wrapper func(router *gin.Engine)) {
 	apiRouter := gin.New()
 	setMiddlewares(apiRouter)
 	wrapper(apiRouter)
-	apiRouter.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	registerAdminRoutes(apiRouter)
 	apiRouter.Group("/api")
 	if err := apiRouter.Run(addr); err != nil {
 		panic(err)
+	}
+}
+
+func RunAdminHTTPServer(addr string) {
+	if addr == "" {
+		panic("admin http addr is empty")
+	}
+	r := gin.New()
+	r.Use(gin.Recovery())
+	registerAdminRoutes(r)
+	logrus.Infof("Starting admin HTTP server on %s", addr)
+	if err := r.Run(addr); err != nil {
+		logrus.Panicf("admin http server failed: %v", err)
 	}
 }
 
@@ -34,4 +47,10 @@ func setMiddlewares(r *gin.Engine) {
 	r.Use(middleware.RequestLog(logrus.NewEntry(logrus.StandardLogger())))
 	r.Use(otelgin.Middleware("default-http-server"))
 	r.Use(middleware.PrometheusMetrics())
+}
+
+func registerAdminRoutes(r *gin.Engine) {
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	r.GET("/health", livenessHandler)
+	r.GET("/ready", readinessHandler)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/handler/redis"
 	"github.com/ecstasoy/gorder/common/logging"
+	"github.com/ecstasoy/gorder/common/metrics"
 	"github.com/ecstasoy/gorder/order/app/command"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
@@ -72,8 +73,28 @@ func (c *Consumer) handleFlashSaleOrder(ch *amqp.Channel, msg amqp.Delivery, q a
 	)
 	defer span.End()
 
+	start := time.Now()
 	var err error
+	var createErr error
 	defer func() {
+		// Business outcome (success | insufficient_stock | error).
+		// err covers pre-business failures (unmarshal); createErr covers business.
+		result := "error"
+		if err == nil {
+			result = metrics.ClassifyFlashOrderError(createErr)
+		}
+		duration := time.Since(start).Seconds()
+		metrics.FlashOrderTotal.WithLabelValues(result).Inc()
+		metrics.FlashOrderDuration.WithLabelValues(result).Observe(duration)
+
+		// Consumer-level health (ack | nack).
+		consumerResult := "ack"
+		if err != nil || createErr != nil {
+			consumerResult = "nack"
+		}
+		metrics.RabbitConsumeTotal.WithLabelValues(q.Name, consumerResult).Inc()
+		metrics.RabbitConsumeDuration.WithLabelValues(q.Name).Observe(duration)
+
 		if err != nil {
 			logging.Warnf(ctx, nil, "flash sale consume failed: %v", err)
 			_ = msg.Nack(false, false)

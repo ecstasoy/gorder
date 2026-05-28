@@ -17,8 +17,15 @@ func RegisterToConsul(ctx context.Context, serviceName string) (func() error, er
 		return func() error { return nil }, err
 	}
 	instanceID := GenerateInstanceID(serviceName)
-	hostPort := viper.Sub(serviceName).GetString("grpc-addr")
-	if err := registry.Register(ctx, instanceID, serviceName, hostPort); err != nil {
+	// registerAddr is what peers use to reach us (e.g. "stock:5003" in
+	// docker-compose, "$POD_IP:5003" in K8s). Falls back to grpc-addr so
+	// local dev keeps working without extra config.
+	sub := viper.Sub(serviceName)
+	registerAddr := sub.GetString("grpc-register-addr")
+	if registerAddr == "" {
+		registerAddr = sub.GetString("grpc-addr")
+	}
+	if err := registry.Register(ctx, instanceID, serviceName, registerAddr); err != nil {
 		return func() error { return nil }, err
 	}
 
@@ -41,7 +48,7 @@ func RegisterToConsul(ctx context.Context, serviceName string) (func() error, er
 
 	logrus.WithFields(logrus.Fields{
 		"serviceName": serviceName,
-		"addr":        hostPort,
+		"addr":        registerAddr,
 		"instanceID":  instanceID,
 	}).Info("registered to consul")
 

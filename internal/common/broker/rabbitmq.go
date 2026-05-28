@@ -60,7 +60,7 @@ func Connect(user, pwd, host, port string) (*amqp.Connection, *amqp.Channel, fun
 		logrus.Fatal(fmt.Errorf("failed to create payment timeout queue: %w", err))
 	}
 
-	// 启动时一次性声明所有 direct queue,避免 PublishEvent 路径上做并发 QueueDeclare
+	// 启动时一次性声明所有 direct queue,避免 publishEvent 路径上做并发 QueueDeclare
 	// (QueueDeclare 和 Publish 一样是 channel 级操作,不是 thread-safe)
 	for _, q := range []string{
 		EventOrderCreated,
@@ -72,8 +72,16 @@ func Connect(user, pwd, host, port string) (*amqp.Connection, *amqp.Channel, fun
 		}
 	}
 
+	poolSize := viper.GetInt("rabbitmq.publish-pool-size")
+	if err := initPublisherPool(conn, poolSize); err != nil {
+		logrus.Fatal(fmt.Errorf("failed to init publisher pool: %w", err))
+	}
+
 	logrus.Info("Successfully connected to RabbitMQ")
 	return conn, ch, func() error {
+		if pubPool != nil {
+			pubPool.close()
+		}
 		_ = ch.Close()
 		return conn.Close()
 	}

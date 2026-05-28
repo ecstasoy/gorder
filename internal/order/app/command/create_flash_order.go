@@ -8,13 +8,13 @@ import (
 	"github.com/ecstasoy/gorder/common/convertor"
 	"github.com/ecstasoy/gorder/common/decorator"
 	"github.com/ecstasoy/gorder/common/entity"
-	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/common/handler/redis"
 	"github.com/ecstasoy/gorder/common/logging"
+	"github.com/ecstasoy/gorder/common/metrics"
 	"github.com/ecstasoy/gorder/order/app/query"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
+	"github.com/ecstasoy/gorder/order/domain/service"
 	"github.com/pkg/errors"
-	amqp "github.com/rabbitmq/amqp091-go"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
@@ -37,14 +37,14 @@ type createFlashOrderHandler struct {
 	orderRepo   domain.Repository
 	stockGRPC   query.StockService
 	redisClient *goredis.Client
-	channel     *amqp.Channel
+	publisher   broker.Publisher
 }
 
 func NewCreateFlashOrderHandler(
 	orderRepo domain.Repository,
 	stockGRPC query.StockService,
 	redisClient *goredis.Client,
-	channel *amqp.Channel,
+	publisher broker.Publisher,
 	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) CreateFlashOrderHandler {
@@ -57,15 +57,15 @@ func NewCreateFlashOrderHandler(
 	if redisClient == nil {
 		panic("redisClient cannot be nil")
 	}
-	if channel == nil {
-		panic("channel cannot be nil")
+	if publisher == nil {
+		panic("publisher cannot be nil")
 	}
 	return decorator.ApplyCommandDecorators[CreateFlashOrder, *CreateFlashOrderResult](
 		createFlashOrderHandler{
 			orderRepo:   orderRepo,
 			stockGRPC:   stockGRPC,
 			redisClient: redisClient,
-			channel:     channel,
+			publisher:   publisher,
 		},
 		logger,
 		metricsClient,
@@ -97,13 +97,16 @@ func (c createFlashOrderHandler) Handle(ctx context.Context, cmd CreateFlashOrde
 		return nil, errors.Wrap(err, "failed to deduct flash stock")
 	}
 
-	o, err := persistAndPublish(ctx, c.orderRepo, c.channel, &domain.Order{
-		CustomerID: cmd.CustomerID,
-		Items:      validItems,
-		Status:     orderpb.OrderStatus_ORDER_STATUS_PENDING,
-	})
+	pendingOrder, err := domain.NewPendingOrder(cmd.CustomerID, validItems)
+	if err != nil {
+		return nil, err
+	}
+
+	o, err := service.NewOrderDomainService(c.orderRepo, c.publisher).CreateOrder(ctx, *pendingOrder)
+
 	if err != nil {
 		// MySQL 已扣,Mongo 或 publish 失败 → 补偿回滚库存
+		metrics.StockRestoreTotal.WithLabelValues("persist_or_publish_failed").Inc()
 		if restoreErr := c.stockGRPC.RestoreStock(ctx, protoQty); restoreErr != nil {
 			logging.Errorf(ctx, nil, "RestoreStock compensation failed after persistAndPublish err: %v", restoreErr)
 		}

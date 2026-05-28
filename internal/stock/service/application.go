@@ -18,7 +18,7 @@ func NewApplication(_ context.Context) (app.Application, func()) {
 	db := persistent.NewMySQL()
 	stockRepo := adapters.NewMySQLStockRepository(db)
 	stripeAPI := integration.NewStripeAPI()
-	metricsClient := metrics.TodoMetrics{}
+	metricsClient := metrics.NewPrometheusMetricsClient()
 	redis.Init()
 	redisClient := redis.LocalClient()
 	logger := logrus.StandardLogger()

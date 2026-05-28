@@ -2,13 +2,13 @@ package decorator
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 )
 
 type MetricsClient interface {
-	Inc(key string, value int)
+	IncCommand(handler string, success bool, duration time.Duration)
+	IncQuery(handler string, success bool, duration time.Duration)
 }
 
 type queryMetricsDecorator[Q any, R any] struct {
@@ -20,13 +20,7 @@ func (q queryMetricsDecorator[Q, R]) Handle(ctx context.Context, query Q) (resul
 	start := time.Now()
 	actionName := strings.ToLower(generateActionName(query))
 	defer func() {
-		end := time.Since(start)
-		q.client.Inc(fmt.Sprintf("query.%s.duration", actionName), int(end.Seconds()))
-		if err == nil {
-			q.client.Inc(fmt.Sprintf("query.%s.success", actionName), 1)
-		} else {
-			q.client.Inc(fmt.Sprintf("query.%s.failure", actionName), 1)
-		}
+		q.client.IncQuery(actionName, err == nil, time.Since(start))
 	}()
 	return q.base.Handle(ctx, query)
 }
@@ -40,13 +34,7 @@ func (c commandMetricsDecorator[C, R]) Handle(ctx context.Context, cmd C) (resul
 	start := time.Now()
 	actionName := strings.ToLower(generateActionName(cmd))
 	defer func() {
-		end := time.Since(start)
-		c.client.Inc(fmt.Sprintf("command.%s.duration", actionName), int(end.Seconds()))
-		if err == nil {
-			c.client.Inc(fmt.Sprintf("command.%s.success", actionName), 1)
-		} else {
-			c.client.Inc(fmt.Sprintf("command.%s.failure", actionName), 1)
-		}
+		c.client.IncCommand(actionName, err == nil, time.Since(start))
 	}()
 	return c.base.Handle(ctx, cmd)
 }

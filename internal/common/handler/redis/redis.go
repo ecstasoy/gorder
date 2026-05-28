@@ -34,27 +34,22 @@ func Client(name string) *redis.Client {
 }
 
 func supplier(key string) any {
-	confKey := confName + "." + key
-	type Section struct {
-		IP           string        `mapstructure:"ip"`
-		Port         string        `mapstructure:"port"`
-		PoolSize     int           `mapstructure:"pool_size"`
-		MaxConn      int           `mapstructure:"max_conn"`
-		ConnTimeout  time.Duration `mapstructure:"conn_timeout"`
-		ReadTimeout  time.Duration `mapstructure:"read_timeout"`
-		WriteTimeout time.Duration `mapstructure:"write_timeout"`
-	}
-	var c Section
-	if err := viper.UnmarshalKey(confKey, &c); err != nil {
-		panic(err)
-	}
+	base := confName + "." + key // e.g. "redis.local"
+	addr := fmt.Sprintf("%s:%s",
+		viper.GetString(base+".ip"),
+		viper.GetString(base+".port"),
+	)
+	connTimeoutMs := viper.GetInt(base + ".conn_timeout")
+	readTimeoutMs := viper.GetInt(base + ".read_timeout")
+	writeTimeoutMs := viper.GetInt(base + ".write_timeout")
+
 	return redis.NewClient(&redis.Options{
 		Network:         "tcp",
-		Addr:            fmt.Sprintf("%s:%s", c.IP, c.Port),
-		PoolSize:        c.PoolSize,
-		MaxActiveConns:  c.MaxConn,
-		ConnMaxLifetime: c.ConnTimeout * time.Millisecond,
-		ReadTimeout:     c.ReadTimeout * time.Millisecond,
-		WriteTimeout:    c.WriteTimeout * time.Millisecond,
+		Addr:            addr,
+		PoolSize:        viper.GetInt(base + ".pool_size"),
+		MaxActiveConns:  viper.GetInt(base + ".max_conn"),
+		ConnMaxLifetime: time.Duration(connTimeoutMs) * time.Millisecond,
+		ReadTimeout:     time.Duration(readTimeoutMs) * time.Millisecond,
+		WriteTimeout:    time.Duration(writeTimeoutMs) * time.Millisecond,
 	})
 }

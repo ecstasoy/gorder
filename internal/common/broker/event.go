@@ -3,7 +3,9 @@ package broker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
@@ -13,14 +15,64 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// publishMutex 保护所有向 RabbitMQ 的 publish 调用。
-// RabbitMQ Go 客户端的 *amqp.Channel 不是 goroutine-safe:
-// 多个 goroutine 并发调用 Channel.Publish 会交错写入 TCP 帧,
-// 被 broker 检测到非法帧后立刻 close channel,整条 channel 陷入
-// "channel/connection is not open" 永久失败状态。
-// 用一个全局 mutex 串行化所有 publish,性能代价可忽略 (publish 本身 < 1ms),
-// 但换来稳定性。
-var publishMutex sync.Mutex
+// amqp091 *amqp.Channel 不是 goroutine-safe —— 多个 goroutine 并发调用
+// Channel.Publish 会交错写入 TCP 帧,被 broker 检测到后 close channel。
+// 旧做法: 1 个 channel + 全局 mutex → publish 串行,吞吐上限约 2-3k msg/s。
+// 新做法: N 个 channel,每个自己一把 mutex,round-robin 分配 → 吞吐随 N 线性扩展,
+type pooledChannel struct {
+	ch *amqp.Channel
+	mu sync.Mutex
+}
+
+type channelPool struct {
+	channels []*pooledChannel
+	next     atomic.Uint64
+}
+
+func newChannelPool(conn *amqp.Connection, size int) (*channelPool, error) {
+	if size <= 0 {
+		size = 8
+	}
+	pcs := make([]*pooledChannel, 0, size)
+	for i := 0; i < size; i++ {
+		ch, err := conn.Channel()
+		if err != nil {
+			for _, pc := range pcs {
+				_ = pc.ch.Close()
+			}
+			return nil, fmt.Errorf("channel pool: open channel #%d: %w", i, err)
+		}
+		pcs = append(pcs, &pooledChannel{ch: ch})
+	}
+	return &channelPool{channels: pcs}, nil
+}
+
+// withChannel pick a channel in round-robin to apply to fn
+func (p *channelPool) withChannel(fn func(*amqp.Channel) error) error {
+	i := p.next.Add(1) % uint64(len(p.channels))
+	pc := p.channels[i]
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	return fn(pc.ch)
+}
+
+func (p *channelPool) close() {
+	for _, pc := range p.channels {
+		_ = pc.ch.Close()
+	}
+}
+
+var pubPool *channelPool
+
+func initPublisherPool(conn *amqp.Connection, size int) error {
+	pool, err := newChannelPool(conn, size)
+	if err != nil {
+		return err
+	}
+	pubPool = pool
+	logrus.Infof("Initialized RabbitMQ publisher pool with %d channels", len(pool.channels))
+	return nil
+}
 
 const (
 	EventOrderCreated        = "order.created"
@@ -77,7 +129,7 @@ type PublishEventReq struct {
 	Body     any
 }
 
-func PublishEvent(ctx context.Context, p PublishEventReq) (err error) {
+func publishEvent(ctx context.Context, p PublishEventReq) (err error) {
 	_, dLog := logging.WhenEventPublish(ctx, p)
 	defer dLog(nil, &err)
 
@@ -119,7 +171,7 @@ func directQueue(ctx context.Context, p PublishEventReq) (err error) {
 	})
 }
 
-func PublishToDelayQueue(ctx context.Context, ch *amqp.Channel, body any) error {
+func publishToDelayQueue(ctx context.Context, ch *amqp.Channel, body any) error {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -145,14 +197,16 @@ func fanOut(ctx context.Context, p PublishEventReq) (err error) {
 	})
 }
 
-func doPublish(ctx context.Context, ch *amqp.Channel, exchange, key string, mandatory bool, immediate bool, msg amqp.Publishing) error {
-	// 串行化所有 Channel.Publish 调用 (见 publishMutex 注释)
-	publishMutex.Lock()
-	defer publishMutex.Unlock()
-
-	if err := ch.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg); err != nil {
-		logging.Warnf(ctx, nil, "_publish_event_failed || exchange=%s || key=%s || msg=%v", exchange, key, msg)
-		return errors.Wrap(err, "publish event error")
+func doPublish(ctx context.Context, _ *amqp.Channel, exchange, key string, mandatory bool, immediate bool, msg amqp.Publishing) error {
+	if pubPool == nil {
+		return errors.New("publisher pool not initialized; call broker.Connect first")
 	}
-	return nil
+
+	return pubPool.withChannel(func(ch *amqp.Channel) error {
+		if err := ch.PublishWithContext(ctx, exchange, key, mandatory, immediate, msg); err != nil {
+			logging.Warnf(ctx, nil, "_publish_event_failed || exchange=%s || key=%s || msg=%v", exchange, key, msg)
+			return errors.Wrap(err, "publish event error")
+		}
+		return nil
+	})
 }

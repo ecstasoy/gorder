@@ -27,14 +27,22 @@ func NewViperConfig() (err error) {
 }
 
 func newViperConfig() error {
-	relativePath, err := getRelativePathFromCaller()
-	if err != nil {
-		return err
-	}
 	viper.SetConfigName("global")
 	viper.SetConfigType("yaml")
-	viper.AddConfigPath(relativePath)
-	viper.EnvKeyReplacer(strings.NewReplacer("_", "-"))
+	// Container / prod: explicit CONFIG_DIR wins.
+	// Local dev: fall back to the source-file-relative hack.
+	if dir := os.Getenv("CONFIG_DIR"); dir != "" {
+		viper.AddConfigPath(dir)
+	} else {
+		relativePath, err := getRelativePathFromCaller()
+		if err != nil {
+			return err
+		}
+		viper.AddConfigPath(relativePath)
+	}
+	// Replace `.` and `-` with `_` so dotted config keys map to ENV_STYLE vars
+	// (e.g. `mongo.host` ← MONGO_HOST, `order.http-addr` ← ORDER_HTTP_ADDR).
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	viper.AutomaticEnv()
 	return viper.ReadInConfig()
 }
@@ -46,7 +54,6 @@ func getRelativePathFromCaller() (relativePath string, err error) {
 	}
 	_, here, _, _ := runtime.Caller(0)
 	relativePath, err = filepath.Rel(callerPwd, filepath.Dir(here))
-	fmt.Printf("caller from: %s, here: %s, relpath: %s\n", callerPwd, here, relativePath)
 	return relativePath, err
 }
 

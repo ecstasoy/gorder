@@ -40,7 +40,7 @@ func NewApplication(ctx context.Context) (app.Application, func()) {
 }
 
 func newApplication(ctx context.Context, grpc *adapters.OrderGRPC, processor domain.Processor) app.Application {
-	metricsClient := metrics.TodoMetrics{}
+	metricsClient := metrics.NewPrometheusMetricsClient()
 	return app.Application{
 		Commands: app.Commands{
 			CreatePayment: command.NewCreatePaymentHandler(processor, grpc, logrus.StandardLogger(), metricsClient),

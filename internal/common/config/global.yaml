@@ -22,6 +22,7 @@ payment:
 
 kitchen:
     service-name: kitchen
+    http-addr: 127.0.0.1:9094
 
 jaeger:
   url: "http://127.0.0.1:14268/api/traces"
@@ -33,6 +34,7 @@ rabbitmq:
   port: 5672
   max-retry-count: 5
   payment-timeout-ms: 30000
+  publish-pool-size: 8
 
 mongo:
   user: root
@@ -53,8 +55,8 @@ redis:
   local:
     ip: 127.0.0.1
     port: 6379
-    pool_size: 100
-    max_conn: 100
+    pool_size: 500
+    max_conn: 500
     conn_timeout: 1000
     read_timeout: 1000
     write_timeout: 100

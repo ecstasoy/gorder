@@ -46,14 +46,15 @@ func NewApplication(ctx context.Context) (app.Application, query.StockService, *
 func newApplication(_ context.Context, stockGRPC query.StockService, redisClient *goredis.Client, ch *amqp.Channel) app.Application {
 	mongoClient := newMongoClient()
 	orderRepo := adapters.NewOrderRepositoryMongo(mongoClient)
-	metricsClient := metrics.TodoMetrics{}
+	metricsClient := metrics.NewPrometheusMetricsClient()
 	logger := logrus.StandardLogger()
+	publisher := broker.NewRabbitMQPublisher(ch)
 	return app.Application{
 		Commands: app.Commands{
-			CreateOrder:      command.NewCreateOrderHandler(orderRepo, stockGRPC, ch, logger, metricsClient),
+			CreateOrder:      command.NewCreateOrderHandler(orderRepo, stockGRPC, publisher, logger, metricsClient),
 			UpdateOrder:      command.NewUpdateOrderHandler(orderRepo, logger, metricsClient),
 			CancelOrder:      command.NewCancelOrderHandler(orderRepo, stockGRPC, logger, metricsClient),
-			CreateFlashOrder: command.NewCreateFlashOrderHandler(orderRepo, stockGRPC, redisClient, ch, logger, metricsClient),
+			CreateFlashOrder: command.NewCreateFlashOrderHandler(orderRepo, stockGRPC, redisClient, publisher, logger, metricsClient),
 		},
 		Queries: app.Queries{
 			GetCustomerOrder: query.NewGetCustomerOrderHandler(orderRepo, logrus.StandardLogger(), metricsClient),

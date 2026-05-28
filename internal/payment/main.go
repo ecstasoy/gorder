@@ -54,7 +54,7 @@ func main() {
 
 	go consumer.NewConsumer(application).Listen(consumerCh)
 
-	paymentHandler := NewPaymentHandler(ch)
+	paymentHandler := NewPaymentHandler(broker.NewRabbitMQPublisher(ch))
 	switch serverType {
 	case "http":
 		server.RunHTTPServer(viper.GetString("payment.service-name"), paymentHandler.RegisterRoutes)

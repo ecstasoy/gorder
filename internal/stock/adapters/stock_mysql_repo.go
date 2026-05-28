@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ecstasoy/gorder/common/entity"
+	"github.com/ecstasoy/gorder/common/metrics"
 	"github.com/ecstasoy/gorder/stock/infra/persistent"
 	"github.com/ecstasoy/gorder/stock/infra/persistent/builder"
 	"github.com/pkg/errors"
@@ -188,7 +189,12 @@ func (m MySQLStockRepository) UpsertStock(ctx context.Context, items []*entity.I
 // 拿到价格)和未来任何"只想扣库存"的场景都用它,替代 CheckIfItemsInStock 的
 // "查 Stripe + 扣库存"组合。
 func (m MySQLStockRepository) DeductStock(ctx context.Context, items []*entity.ItemWithQuantity) error {
-	return m.db.StartTransaction(func(tx *gorm.DB) error {
+	outcome := "error"
+	defer func() {
+		metrics.StockDeductTotal.WithLabelValues(outcome).Inc()
+	}()
+
+	err := m.db.StartTransaction(func(tx *gorm.DB) error {
 		for _, item := range items {
 			res := tx.WithContext(ctx).
 				Model(&persistent.StockModel{}).
@@ -198,9 +204,16 @@ func (m MySQLStockRepository) DeductStock(ctx context.Context, items []*entity.I
 				return errors.Wrapf(res.Error, "DeductStock: failed for %s", item.ID)
 			}
 			if res.RowsAffected == 0 {
+				outcome = "insufficient"
 				return errors.Errorf("DeductStock: insufficient stock for %s (want %d)", item.ID, item.Quantity)
 			}
 		}
 		return nil
 	})
+
+	if err == nil {
+		outcome = "success"
+	}
+
+	return err
 }

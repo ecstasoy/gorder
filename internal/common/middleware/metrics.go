@@ -30,6 +30,10 @@ var (
 
 func PrometheusMetrics() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isAdminPath(c.FullPath()) {
+			c.Next()
+			return
+		}
 		start := time.Now()
 		c.Next()
 		duration := time.Since(start).Seconds()
@@ -41,4 +45,12 @@ func PrometheusMetrics() gin.HandlerFunc {
 		httpRequestDuration.WithLabelValues(c.Request.Method, path, status).Observe(duration)
 		httpRequestTotal.WithLabelValues(c.Request.Method, path, status).Add(1)
 	}
+}
+
+func isAdminPath(path string) bool {
+	switch path {
+	case "/metrics", "/health", "/ready":
+		return true
+	}
+	return false
 }

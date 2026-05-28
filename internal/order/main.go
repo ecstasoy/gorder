@@ -63,7 +63,8 @@ func main() {
 	}
 	defer flashSaleCh.Close()
 
-	c := consumer.NewConsumer(application, redisClient)
+	publisher := broker.NewRabbitMQPublisher(ch)
+	c := consumer.NewConsumer(application, redisClient, publisher)
 	go c.Listen(orderPaidCh)
 	go c.ListenFlashSaleOrders(flashSaleCh)
 
@@ -92,7 +93,7 @@ func main() {
 		flashServer := FlashSaleHTTPServer{
 			app:       application,
 			stockGRPC: stockGRPC,
-			amqpCh:    ch,
+			publisher: publisher,
 		}
 		router.POST("/flash-sale/warmup", flashServer.PostFlashSaleWarmup)
 		router.POST("/flash-sale/orders", flashServer.PostFlashSaleOrders)

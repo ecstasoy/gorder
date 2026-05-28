@@ -38,6 +38,20 @@ func NewOrder(id, customerID, status, paymentLink string, items []*entity.Item) 
 	}, nil
 }
 
+func NewPendingOrder(customerId string, items []*entity.Item) (*Order, error) {
+	if customerId == "" {
+		return nil, errors.New("empty customerID")
+	}
+	if items == nil {
+		return nil, errors.New("empty items")
+	}
+	return &Order{
+		CustomerID: customerId,
+		Status:     orderpb.OrderStatus_ORDER_STATUS_PENDING,
+		Items:      items,
+	}, nil
+}
+
 func (o *Order) UpdatePaymentLink(paymentLink string) error {
 	//if paymentLink == "" {
 	//	return errors.New("cannot update empty paymentLink")

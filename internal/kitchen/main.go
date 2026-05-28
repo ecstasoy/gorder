@@ -10,6 +10,7 @@ import (
 	grpcClient "github.com/ecstasoy/gorder/common/client"
 	_ "github.com/ecstasoy/gorder/common/config"
 	"github.com/ecstasoy/gorder/common/logging"
+	"github.com/ecstasoy/gorder/common/server"
 	"github.com/ecstasoy/gorder/common/tracing"
 	"github.com/ecstasoy/gorder/kitchen/adapters"
 	"github.com/ecstasoy/gorder/kitchen/infra/consumer"
@@ -61,5 +62,6 @@ func main() {
 		os.Exit(0)
 	}()
 	logrus.Println("Kitchen service started, waiting for messages...")
-	select {}
+
+	server.RunAdminHTTPServer(viper.GetString("kitchen.http-addr"))
 }

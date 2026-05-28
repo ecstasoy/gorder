@@ -13,7 +13,6 @@ import (
 	"github.com/ecstasoy/gorder/common/logging"
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/sirupsen/logrus"
 	"github.com/stripe/stripe-go/v80"
 	"github.com/stripe/stripe-go/v80/webhook"
@@ -22,11 +21,11 @@ import (
 )
 
 type PaymentHandler struct {
-	channel *amqp.Channel
+	publisher broker.Publisher
 }
 
-func NewPaymentHandler(ch *amqp.Channel) *PaymentHandler {
-	return &PaymentHandler{channel: ch}
+func NewPaymentHandler(publisher broker.Publisher) *PaymentHandler {
+	return &PaymentHandler{publisher: publisher}
 }
 
 func (h *PaymentHandler) RegisterRoutes(c *gin.Engine) {
@@ -98,12 +97,9 @@ func (h *PaymentHandler) HandleWebHook(c *gin.Context) {
 				attribute.String("exchange", broker.EventOrderPaid),
 			)
 
-			_ = broker.PublishEvent(ctx, broker.PublishEventReq{
-				Channel:  h.channel,
-				Routing:  broker.FanOut,
-				Queue:    "",
-				Exchange: broker.EventOrderPaid,
-				Body: broker.OrderPaidEvent{
+			_ = h.publisher.Broadcast(ctx, broker.DomainEvent{
+				Dest: broker.EventOrderPaid,
+				Data: broker.OrderPaidEvent{
 					ID:              session.Metadata["orderID"],
 					CustomerID:      session.Metadata["customerID"],
 					Status:          orderpb.OrderStatus_ORDER_STATUS_PAID,

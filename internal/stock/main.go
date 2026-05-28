@@ -45,6 +45,8 @@ func main() {
 		_ = deregisterFunc()
 	}()
 
+	go server.RunAdminHTTPServer(viper.GetString("stock.http-addr"))
+
 	switch serverType {
 	case "grpc":
 		server.RunGRPCServer(serviceName, func(server *grpc.Server) {

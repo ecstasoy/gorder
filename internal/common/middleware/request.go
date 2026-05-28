@@ -13,6 +13,10 @@ import (
 
 func RequestLog(l *logrus.Entry) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if isAdminPath(c.FullPath()) {
+			c.Next()
+			return
+		}
 		requestIn(c, l)
 		defer requestOut(c, l)
 		c.Next()

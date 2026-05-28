@@ -15,13 +15,13 @@ import (
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	hErrors "github.com/ecstasoy/gorder/common/handler/errors"
 	"github.com/ecstasoy/gorder/common/handler/redis"
+	"github.com/ecstasoy/gorder/common/metrics"
 	"github.com/ecstasoy/gorder/order/app"
 	"github.com/ecstasoy/gorder/order/app/command"
 	"github.com/ecstasoy/gorder/order/app/dto"
 	"github.com/ecstasoy/gorder/order/app/query"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	amqp "github.com/rabbitmq/amqp091-go"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 )
@@ -130,7 +130,7 @@ type FlashSaleHTTPServer struct {
 	common.BaseResponse
 	app       app.Application
 	stockGRPC query.StockService
-	amqpCh    *amqp.Channel
+	publisher broker.Publisher
 }
 
 type warmupRequest struct {
@@ -179,6 +179,12 @@ func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
 	var req flashOrderRequest
 	var err error
 	var resp flashOrderResponse
+	outcome := "error"
+	start := time.Now()
+	defer func() {
+		metrics.FlashReserveTotal.WithLabelValues(outcome).Inc()
+		metrics.FlashReserveDuration.Observe(time.Since(start).Seconds())
+	}()
 	defer func() { h.Response(c, err, resp) }()
 
 	if err = c.ShouldBindJSON(&req); err != nil {
@@ -242,16 +248,19 @@ func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
 				stockKey: stockKey, onceKey: onceKey, qty: int64(item.Quantity),
 			})
 		case redis.FlashReserveNotActive:
+			outcome = "not_active"
 			rollbackAll()
 			err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
 				"flash sale not active for item %s", item.ID)
 			return
 		case redis.FlashReserveDuplicate:
+			outcome = "duplicate"
 			rollbackAll()
 			err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
 				"customer %s can only place one flash-sale order for item %s", req.CustomerID, item.ID)
 			return
 		case redis.FlashReserveInsufficient:
+			outcome = "insufficient"
 			rollbackAll()
 			err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError,
 				"item %s is out of stock", item.ID)
@@ -269,12 +278,9 @@ func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
 		mqItems = append(mqItems, broker.FlashSaleItem{ItemID: item.ID, Quantity: item.Quantity})
 	}
 
-	if pubErr := broker.PublishEvent(ctx, broker.PublishEventReq{
-		Channel:  h.amqpCh,
-		Routing:  broker.Direct,
-		Queue:    broker.EventFlashSaleOrder,
-		Exchange: "",
-		Body:     broker.FlashSaleOrderPayload{Token: token, CustomerID: req.CustomerID, Items: mqItems},
+	if pubErr := h.publisher.Publish(ctx, broker.DomainEvent{
+		Dest: broker.EventFlashSaleOrder,
+		Data: broker.FlashSaleOrderPayload{Token: token, CustomerID: req.CustomerID, Items: mqItems},
 	}); pubErr != nil {
 		rollbackAll()
 		err = hErrors.NewWithError(consts.ErrnoUnknownError, pubErr)
@@ -287,6 +293,7 @@ func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
 		flashResultPendingTTL)
 
 	resp = flashOrderResponse{Token: token}
+	outcome = "ok"
 }
 
 func (h FlashSaleHTTPServer) GetFlashSaleResult(c *gin.Context) {

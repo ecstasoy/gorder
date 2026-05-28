@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ecstasoy/gorder/common/tracing"
@@ -18,6 +19,7 @@ func Init() {
 	setOutput(logrus.StandardLogger())
 	logrus.SetLevel(logrus.DebugLevel)
 	logrus.AddHook(&traceHook{})
+	setLevel(logrus.StandardLogger())
 }
 
 func SetFormatter(logger *logrus.Logger) {
@@ -35,27 +37,27 @@ func SetFormatter(logger *logrus.Logger) {
 }
 
 func setOutput(logger *logrus.Logger) {
-	var (
+	logger.SetOutput(os.Stdout)
+
+	if strings.ToLower(os.Getenv("LOG_OUTPUT")) != "file" {
+		return
+	}
+
+	const (
 		folder    = "./log/"
-		filePath  = "app.log"
-		errorPath = "errors.log"
+		appFile   = "app.log"
+		errorFile = "errors.log"
 	)
 	if err := os.MkdirAll(folder, 0750); err != nil && !os.IsExist(err) {
 		panic(err)
 	}
-	file, err := os.OpenFile(folder+filePath, os.O_CREATE|os.O_RDWR, 0755)
-	if err != nil {
+	if err := os.MkdirAll(folder, 0750); err != nil && !os.IsExist(err) {
 		panic(err)
 	}
-	_, err = os.OpenFile(folder+errorPath, os.O_CREATE|os.O_RDWR, 0755)
-	if err != nil {
-		panic(err)
-	}
-	logger.SetOutput(file)
 
 	rotateInfo, err := rotatelogs.New(
-		folder+filePath+".%Y%m%d",
-		rotatelogs.WithLinkName("app.log"),
+		folder+appFile+".%Y%m%d",
+		rotatelogs.WithLinkName(folder+appFile),
 		rotatelogs.WithMaxAge(7*24*time.Hour),
 		rotatelogs.WithRotationTime(1*time.Hour),
 	)
@@ -63,22 +65,42 @@ func setOutput(logger *logrus.Logger) {
 		panic(err)
 	}
 	rotateError, err := rotatelogs.New(
-		folder+errorPath+".%Y%m%d",
-		rotatelogs.WithLinkName("errors.log"),
+		folder+errorFile+".%Y%m%d",
+		rotatelogs.WithLinkName(folder+errorFile),
 		rotatelogs.WithMaxAge(7*24*time.Hour),
 		rotatelogs.WithRotationTime(1*time.Hour),
 	)
-	rotationMap := lfshook.WriterMap{
+	if err != nil {
+		panic(err)
+	}
+	logger.AddHook(lfshook.NewHook(lfshook.WriterMap{
 		logrus.DebugLevel: rotateInfo,
 		logrus.InfoLevel:  rotateInfo,
 		logrus.WarnLevel:  rotateError,
 		logrus.ErrorLevel: rotateError,
 		logrus.FatalLevel: rotateError,
 		logrus.PanicLevel: rotateError,
-	}
-	logrus.AddHook(lfshook.NewHook(rotationMap, &logrus.JSONFormatter{
+	}, &logrus.JSONFormatter{
 		TimestampFormat: time.RFC3339Nano,
 	}))
+}
+
+func setLevel(logger *logrus.Logger) {
+	if lvl := os.Getenv("LOG_LEVEL"); lvl != "" {
+		parsed, err := logrus.ParseLevel(strings.ToUpper(lvl))
+		if err != nil {
+			logger.SetLevel(logrus.InfoLevel)
+			logger.Warnf("invalid LOG_LEVEL=%q, falling back to info", lvl)
+			return
+		}
+		logger.SetLevel(parsed)
+		return
+	}
+	if isLocal, _ := strconv.ParseBool(os.Getenv("LOCAL_ENV")); isLocal {
+		logger.SetLevel(logrus.DebugLevel)
+		return
+	}
+	logger.SetLevel(logrus.InfoLevel)
 }
 
 func logf(ctx context.Context, level logrus.Level, fields logrus.Fields, format string, args ...any) {

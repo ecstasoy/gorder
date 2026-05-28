@@ -1,0 +1,33 @@
+  .git
+  .gitignore
+  .github
+  .claude
+  *.md
+  Dockerfile
+  .dockerignore
+  docker-compose.yaml
+
+  # docs / dev 资源
+  docs/
+  wiki/
+  deepwiki/
+  graphify-out/
+  excalidraw-diagram-skill/
+  scripts/
+  tmp/
+  public/
+
+  # 本地产物
+  log/
+  data/
+  internal/*/log/
+  internal/*/data/
+
+  # 测试
+  **/*_test.go
+  **/tests/                          
+
+  # IDE
+  .idea/
+  .vscode/
+  *.swp
