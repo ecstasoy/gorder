@@ -108,7 +108,7 @@ func (c createFlashOrderHandler) Handle(ctx context.Context, cmd CreateFlashOrde
 		return nil, err
 	}
 
-	o, err := service.NewOrderDomainService(c.orderRepo, c.outbox, c.tx).CreateOrder(ctx, *pendingOrder)
+	o, err := service.NewOrderDomainService(c.orderRepo, c.outbox, c.tx).CreateOrder(ctx, pendingOrder)
 
 	if err != nil {
 		// MySQL 已扣,Mongo 或 publish 失败 → 补偿回滚库存

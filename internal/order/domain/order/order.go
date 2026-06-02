@@ -14,6 +14,11 @@ type Order struct {
 	Status      orderpb.OrderStatus
 	PaymentLink string
 	Items       []*entity.Item
+
+	// events 是 aggregate 在状态转移时记录的 domain event,不参与持久化也不
+	// 参与序列化 (unexported field — encoding/json + bson driver 都会跳过)。
+	// saga 用 PullEvents() 拿走后清空。
+	events []DomainEvent
 }
 
 func NewOrder(id, customerID, status, paymentLink string, items []*entity.Item) (*Order, error) {
@@ -45,11 +50,26 @@ func NewPendingOrder(customerId string, items []*entity.Item) (*Order, error) {
 	if items == nil {
 		return nil, errors.New("empty items")
 	}
-	return &Order{
+	o := &Order{
 		CustomerID: customerId,
 		Status:     orderpb.OrderStatus_ORDER_STATUS_PENDING,
 		Items:      items,
-	}, nil
+	}
+	// Capture *Order — Repo.Create 会在同一 ref 上 set ID,后续 PullEvents
+	// 拿到的 OrderCreatedEvent.Order.ID 已经是分配后的值。
+	o.events = append(o.events, OrderCreatedEvent{Order: o})
+	return o, nil
+}
+
+// PullEvents 返回自上次 pull 以来记录的 domain event,并清空内部 list。
+// 调用者 (saga) 拿到后翻译成 outbox 记录;再次 pull 不会重复拿到同一组事件。
+func (o *Order) PullEvents() []DomainEvent {
+	if len(o.events) == 0 {
+		return nil
+	}
+	events := o.events
+	o.events = nil
+	return events
 }
 
 func (o *Order) UpdatePaymentLink(paymentLink string) error {
