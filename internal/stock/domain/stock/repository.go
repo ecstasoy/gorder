@@ -19,8 +19,6 @@ type Repository interface {
 			query []*entity.ItemWithQuantity,
 		) ([]*entity.ItemWithQuantity, error),
 	) error
-	RestoreStock(ctx context.Context, items []*entity.ItemWithQuantity) error
-	DeductStock(ctx context.Context, items []*entity.ItemWithQuantity) error
 	// UpsertStock 把指定 product_id 的 quantity SET 为给定值(不是增量)。
 	// 用于秒杀 warmup —— 每次活动开始时把 flash SKU 的库存重置为本场活动的总量。
 	UpsertStock(ctx context.Context, items []*entity.ItemWithQuantity) error

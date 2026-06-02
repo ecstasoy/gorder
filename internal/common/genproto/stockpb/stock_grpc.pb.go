@@ -19,14 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	StockService_GetItems_FullMethodName            = "/stockpb.StockService/GetItems"
-	StockService_CheckIfItemsInStock_FullMethodName = "/stockpb.StockService/CheckIfItemsInStock"
-	StockService_RestoreStock_FullMethodName        = "/stockpb.StockService/RestoreStock"
-	StockService_WarmUpFlashStock_FullMethodName    = "/stockpb.StockService/WarmUpFlashStock"
-	StockService_DeductStock_FullMethodName         = "/stockpb.StockService/DeductStock"
-	StockService_Reserve_FullMethodName             = "/stockpb.StockService/Reserve"
-	StockService_Confirm_FullMethodName             = "/stockpb.StockService/Confirm"
-	StockService_Release_FullMethodName             = "/stockpb.StockService/Release"
+	StockService_GetItems_FullMethodName         = "/stockpb.StockService/GetItems"
+	StockService_WarmUpFlashStock_FullMethodName = "/stockpb.StockService/WarmUpFlashStock"
+	StockService_Reserve_FullMethodName          = "/stockpb.StockService/Reserve"
+	StockService_Confirm_FullMethodName          = "/stockpb.StockService/Confirm"
+	StockService_Release_FullMethodName          = "/stockpb.StockService/Release"
 )
 
 // StockServiceClient is the client API for StockService service.
@@ -34,14 +31,10 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type StockServiceClient interface {
 	GetItems(ctx context.Context, in *GetItemsRequest, opts ...grpc.CallOption) (*GetItemsResponse, error)
-	CheckIfItemsInStock(ctx context.Context, in *CheckIfItemsInStockRequest, opts ...grpc.CallOption) (*CheckIfItemsInStockResponse, error)
-	RestoreStock(ctx context.Context, in *RestoreStockRequest, opts ...grpc.CallOption) (*RestoreStockResponse, error)
 	WarmUpFlashStock(ctx context.Context, in *WarmUpFlashStockRequest, opts ...grpc.CallOption) (*WarmUpFlashStockResponse, error)
-	DeductStock(ctx context.Context, in *DeductStockRequest, opts ...grpc.CallOption) (*DeductStockResponse, error)
-	// ADR-0001 Step 4: Reserve / Confirm / Release lifecycle. Replaces
-	// DeductStock + RestoreStock in the long run; both kept until Step 7.
-	// OrderID is the idempotency key — repeated calls on the same OrderID
-	// are no-ops once the terminal state is reached.
+	// ADR-0001: Reserve / Confirm / Release lifecycle. Replaces the
+	// pre-ADR DeductStock + RestoreStock + CheckIfItemsInStock trio
+	// which were removed in Step 7. OrderID is the idempotency key.
 	Reserve(ctx context.Context, in *ReserveRequest, opts ...grpc.CallOption) (*ReserveResponse, error)
 	Confirm(ctx context.Context, in *ConfirmRequest, opts ...grpc.CallOption) (*ConfirmResponse, error)
 	Release(ctx context.Context, in *ReleaseRequest, opts ...grpc.CallOption) (*ReleaseResponse, error)
@@ -65,40 +58,10 @@ func (c *stockServiceClient) GetItems(ctx context.Context, in *GetItemsRequest, 
 	return out, nil
 }
 
-func (c *stockServiceClient) CheckIfItemsInStock(ctx context.Context, in *CheckIfItemsInStockRequest, opts ...grpc.CallOption) (*CheckIfItemsInStockResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CheckIfItemsInStockResponse)
-	err := c.cc.Invoke(ctx, StockService_CheckIfItemsInStock_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *stockServiceClient) RestoreStock(ctx context.Context, in *RestoreStockRequest, opts ...grpc.CallOption) (*RestoreStockResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RestoreStockResponse)
-	err := c.cc.Invoke(ctx, StockService_RestoreStock_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *stockServiceClient) WarmUpFlashStock(ctx context.Context, in *WarmUpFlashStockRequest, opts ...grpc.CallOption) (*WarmUpFlashStockResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(WarmUpFlashStockResponse)
 	err := c.cc.Invoke(ctx, StockService_WarmUpFlashStock_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *stockServiceClient) DeductStock(ctx context.Context, in *DeductStockRequest, opts ...grpc.CallOption) (*DeductStockResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeductStockResponse)
-	err := c.cc.Invoke(ctx, StockService_DeductStock_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -140,14 +103,10 @@ func (c *stockServiceClient) Release(ctx context.Context, in *ReleaseRequest, op
 // for forward compatibility.
 type StockServiceServer interface {
 	GetItems(context.Context, *GetItemsRequest) (*GetItemsResponse, error)
-	CheckIfItemsInStock(context.Context, *CheckIfItemsInStockRequest) (*CheckIfItemsInStockResponse, error)
-	RestoreStock(context.Context, *RestoreStockRequest) (*RestoreStockResponse, error)
 	WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error)
-	DeductStock(context.Context, *DeductStockRequest) (*DeductStockResponse, error)
-	// ADR-0001 Step 4: Reserve / Confirm / Release lifecycle. Replaces
-	// DeductStock + RestoreStock in the long run; both kept until Step 7.
-	// OrderID is the idempotency key — repeated calls on the same OrderID
-	// are no-ops once the terminal state is reached.
+	// ADR-0001: Reserve / Confirm / Release lifecycle. Replaces the
+	// pre-ADR DeductStock + RestoreStock + CheckIfItemsInStock trio
+	// which were removed in Step 7. OrderID is the idempotency key.
 	Reserve(context.Context, *ReserveRequest) (*ReserveResponse, error)
 	Confirm(context.Context, *ConfirmRequest) (*ConfirmResponse, error)
 	Release(context.Context, *ReleaseRequest) (*ReleaseResponse, error)
@@ -163,17 +122,8 @@ type UnimplementedStockServiceServer struct{}
 func (UnimplementedStockServiceServer) GetItems(context.Context, *GetItemsRequest) (*GetItemsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetItems not implemented")
 }
-func (UnimplementedStockServiceServer) CheckIfItemsInStock(context.Context, *CheckIfItemsInStockRequest) (*CheckIfItemsInStockResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method CheckIfItemsInStock not implemented")
-}
-func (UnimplementedStockServiceServer) RestoreStock(context.Context, *RestoreStockRequest) (*RestoreStockResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method RestoreStock not implemented")
-}
 func (UnimplementedStockServiceServer) WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WarmUpFlashStock not implemented")
-}
-func (UnimplementedStockServiceServer) DeductStock(context.Context, *DeductStockRequest) (*DeductStockResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method DeductStock not implemented")
 }
 func (UnimplementedStockServiceServer) Reserve(context.Context, *ReserveRequest) (*ReserveResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Reserve not implemented")
@@ -222,42 +172,6 @@ func _StockService_GetItems_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
-func _StockService_CheckIfItemsInStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CheckIfItemsInStockRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StockServiceServer).CheckIfItemsInStock(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: StockService_CheckIfItemsInStock_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StockServiceServer).CheckIfItemsInStock(ctx, req.(*CheckIfItemsInStockRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _StockService_RestoreStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RestoreStockRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StockServiceServer).RestoreStock(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: StockService_RestoreStock_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StockServiceServer).RestoreStock(ctx, req.(*RestoreStockRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _StockService_WarmUpFlashStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(WarmUpFlashStockRequest)
 	if err := dec(in); err != nil {
@@ -272,24 +186,6 @@ func _StockService_WarmUpFlashStock_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StockServiceServer).WarmUpFlashStock(ctx, req.(*WarmUpFlashStockRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _StockService_DeductStock_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeductStockRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StockServiceServer).DeductStock(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: StockService_DeductStock_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StockServiceServer).DeductStock(ctx, req.(*DeductStockRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -360,20 +256,8 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _StockService_GetItems_Handler,
 		},
 		{
-			MethodName: "CheckIfItemsInStock",
-			Handler:    _StockService_CheckIfItemsInStock_Handler,
-		},
-		{
-			MethodName: "RestoreStock",
-			Handler:    _StockService_RestoreStock_Handler,
-		},
-		{
 			MethodName: "WarmUpFlashStock",
 			Handler:    _StockService_WarmUpFlashStock_Handler,
-		},
-		{
-			MethodName: "DeductStock",
-			Handler:    _StockService_DeductStock_Handler,
 		},
 		{
 			MethodName: "Reserve",

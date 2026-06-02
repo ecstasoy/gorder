@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/ecstasoy/gorder/common/entity"
-	"github.com/ecstasoy/gorder/common/metrics"
 	"github.com/ecstasoy/gorder/stock/infra/persistent"
 	"github.com/ecstasoy/gorder/stock/infra/persistent/builder"
 	"github.com/pkg/errors"
@@ -127,27 +126,6 @@ func (m MySQLStockRepository) updatePessimistic(
 	return nil
 }
 
-func (m MySQLStockRepository) RestoreStock(ctx context.Context, items []*entity.ItemWithQuantity) error {
-	return m.db.StartTransaction(func(tx *gorm.DB) error {
-		var dest []persistent.StockModel
-		dest, err := m.db.BatchGetStockByID(ctx, builder.NewStock().ProductIDs(getIDFromEntities(items)...).ForUpdate())
-		if err != nil {
-			return errors.Wrap(err, "RestoreStock: failed to fetch stock")
-		}
-		existing := m.unmarshalFromDatabase(dest)
-		_ = existing // 已锁行，直接加回即可
-		for _, item := range items {
-			if err := m.db.BatchUpdateStock(ctx, tx,
-				builder.NewStock().ProductIDs(item.ID),
-				map[string]any{"quantity": gorm.Expr("quantity + ?", item.Quantity)},
-			); err != nil {
-				return errors.Wrapf(err, "RestoreStock: failed to restore %s", item.ID)
-			}
-		}
-		return nil
-	})
-}
-
 func getIDFromEntities(items []*entity.ItemWithQuantity) []string {
 	var ids []string
 	for _, i := range items {
@@ -185,35 +163,3 @@ func (m MySQLStockRepository) UpsertStock(ctx context.Context, items []*entity.I
 	})
 }
 
-// DeductStock 纯 CAS 扣减,不查 Stripe 元数据。秒杀消费者(已经从 flash:meta
-// 拿到价格)和未来任何"只想扣库存"的场景都用它,替代 CheckIfItemsInStock 的
-// "查 Stripe + 扣库存"组合。
-func (m MySQLStockRepository) DeductStock(ctx context.Context, items []*entity.ItemWithQuantity) error {
-	outcome := "error"
-	defer func() {
-		metrics.StockDeductTotal.WithLabelValues(outcome).Inc()
-	}()
-
-	err := m.db.StartTransaction(func(tx *gorm.DB) error {
-		for _, item := range items {
-			res := tx.WithContext(ctx).
-				Model(&persistent.StockModel{}).
-				Where("product_id = ? AND quantity >= ?", item.ID, item.Quantity).
-				UpdateColumn("quantity", gorm.Expr("quantity - ?", item.Quantity))
-			if res.Error != nil {
-				return errors.Wrapf(res.Error, "DeductStock: failed for %s", item.ID)
-			}
-			if res.RowsAffected == 0 {
-				outcome = "insufficient"
-				return errors.Errorf("DeductStock: insufficient stock for %s (want %d)", item.ID, item.Quantity)
-			}
-		}
-		return nil
-	})
-
-	if err == nil {
-		outcome = "success"
-	}
-
-	return err
-}

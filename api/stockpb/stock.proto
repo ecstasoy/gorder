@@ -7,25 +7,15 @@ import "orderpb/order.proto";
 
 service StockService {
   rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
-  rpc CheckIfItemsInStock(CheckIfItemsInStockRequest) returns (CheckIfItemsInStockResponse);
-  rpc RestoreStock(RestoreStockRequest) returns (RestoreStockResponse);
   rpc WarmUpFlashStock(WarmUpFlashStockRequest) returns (WarmUpFlashStockResponse);
-  rpc DeductStock(DeductStockRequest) returns (DeductStockResponse);
 
-  // ADR-0001 Step 4: Reserve / Confirm / Release lifecycle. Replaces
-  // DeductStock + RestoreStock in the long run; both kept until Step 7.
-  // OrderID is the idempotency key — repeated calls on the same OrderID
-  // are no-ops once the terminal state is reached.
+  // ADR-0001: Reserve / Confirm / Release lifecycle. Replaces the
+  // pre-ADR DeductStock + RestoreStock + CheckIfItemsInStock trio
+  // which were removed in Step 7. OrderID is the idempotency key.
   rpc Reserve(ReserveRequest) returns (ReserveResponse);
   rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
   rpc Release(ReleaseRequest) returns (ReleaseResponse);
 }
-
-message RestoreStockRequest {
-  repeated orderpb.ItemWithQuantity Items = 1;
-}
-
-message RestoreStockResponse {}
 
 message GetItemsRequest {
   repeated string ItemIDs = 1;
@@ -35,26 +25,12 @@ message GetItemsResponse {
   repeated orderpb.Item Items = 1;
 }
 
-message CheckIfItemsInStockRequest {
-  repeated orderpb.ItemWithQuantity Items = 1;
-}
-
-message CheckIfItemsInStockResponse {
-  bool InStock = 1;
-  repeated orderpb.Item Items = 2;
-}
-
 message WarmUpFlashStockRequest {
   repeated orderpb.ItemWithQuantity Items = 1;
   int64 TTLSeconds = 2;
 }
 
 message WarmUpFlashStockResponse {}
-
-message DeductStockRequest {
-  repeated orderpb.ItemWithQuantity Items = 1;
-}
-message DeductStockResponse {}
 
 message ReserveRequest {
   string OrderID = 1;

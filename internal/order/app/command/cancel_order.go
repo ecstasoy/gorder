@@ -3,9 +3,7 @@ package command
 import (
 	"context"
 
-	"github.com/ecstasoy/gorder/common/convertor"
 	"github.com/ecstasoy/gorder/common/decorator"
-	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/order/app/query"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
@@ -45,8 +43,15 @@ func NewCancelOrderHandler(
 	)
 }
 
+// Handle 按 ADR-0001 Step 7 改造:
+//   - 状态转移走 o.Cancel() (具名领域动作 + append OrderCancelledEvent),
+//     而不是手写 UpdateStatus(CANCELLED)
+//   - 库存归还走 stockGRPC.Release(orderID),不再用旧的 RestoreStock(items)。
+//     Release 是 reservation 感知的:对幂等的 held → released 转移、对
+//     已 confirmed 的 reservation 返回 conflict (不该 release 已支付的单)。
+//     不需要 caller 携带 items —— reservation 表自带 (order_id, items)。
 func (h cancelOrderHandler) Handle(ctx context.Context, cmd CancelOrder) (*CancelOrderResult, error) {
-	var cancelledItems []*entity.Item
+	var didCancel bool
 
 	err := h.orderRepo.Update(ctx,
 		&domain.Order{ID: cmd.OrderID, CustomerID: cmd.CustomerID},
@@ -54,10 +59,10 @@ func (h cancelOrderHandler) Handle(ctx context.Context, cmd CancelOrder) (*Cance
 			if o.Status != orderpb.OrderStatus_ORDER_STATUS_PENDING {
 				return o, nil
 			}
-			if err := o.UpdateStatus(orderpb.OrderStatus_ORDER_STATUS_CANCELLED); err != nil {
+			if err := o.Cancel(); err != nil {
 				return nil, err
 			}
-			cancelledItems = o.Items
+			didCancel = true
 			return o, nil
 		},
 	)
@@ -65,18 +70,11 @@ func (h cancelOrderHandler) Handle(ctx context.Context, cmd CancelOrder) (*Cance
 		return nil, err
 	}
 
-	// 只有实际取消了（cancelledItems 不为空）才归还库存
-	if len(cancelledItems) > 0 {
-		itemsWithQty := make([]*orderpb.ItemWithQuantity, 0, len(cancelledItems))
-		for _, item := range convertor.NewItemConvertor().EntitiesToProtos(cancelledItems) {
-			itemsWithQty = append(itemsWithQty, &orderpb.ItemWithQuantity{
-				ItemID:   item.ID,
-				Quantity: item.Quantity,
-			})
-		}
-		if err := h.stockGRPC.RestoreStock(ctx, itemsWithQty); err != nil {
-			// 订单已取消成功，库存归还失败只记录日志，不回滚
-			logrus.WithContext(ctx).Errorf("order %s cancelled but failed to restore stock: %v", cmd.OrderID, err)
+	if didCancel {
+		if err := h.stockGRPC.Release(ctx, cmd.OrderID); err != nil {
+			// 订单已取消,Release 失败只记录日志,不回滚 ——
+			// stock 服务的 zombie 扫描会兜底 (ADR-0001 Step 4 设计预留)。
+			logrus.WithContext(ctx).Errorf("order %s cancelled but Release failed: %v", cmd.OrderID, err)
 		}
 	}
 

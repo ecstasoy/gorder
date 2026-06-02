@@ -97,6 +97,18 @@ func (o *Order) UpdateStatus(to orderpb.OrderStatus) error {
 	return nil
 }
 
+// Cancel 把 Order 状态推到 CANCELLED 并记录 OrderCancelledEvent。
+// 与 UpdateStatus 不同的是 Cancel 是一个具名的领域动作 —— cancel handler
+// 调用它而不是手写 UpdateStatus,让"取消"这个意图显式地住在 aggregate
+// 上,自然 append 事件 (ADR-0001 Step 3 模式),不会有人忘了记录。
+func (o *Order) Cancel() error {
+	if err := o.UpdateStatus(orderpb.OrderStatus_ORDER_STATUS_CANCELLED); err != nil {
+		return err
+	}
+	o.events = append(o.events, OrderCancelledEvent{Order: o})
+	return nil
+}
+
 func (o *Order) isValidStatusTransition(to orderpb.OrderStatus) bool {
 	if o.Status == to {
 		return true

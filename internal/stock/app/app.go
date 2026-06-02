@@ -11,16 +11,14 @@ type Application struct {
 }
 
 type Commands struct {
-	RestoreStock     command.RestoreStockHandler
 	WarmUpFlashStock command.WarmUpFlashStockHandler
-	DeductStock      command.DeductStockHandler
-	// ADR-0001 Step 4
+	// ADR-0001 Step 4: reservation lifecycle. Replaces the pre-ADR
+	// DeductStock + RestoreStock which were removed in Step 7.
 	ReserveStock command.ReserveStockHandler
 	ConfirmStock command.ConfirmStockHandler
 	ReleaseStock command.ReleaseStockHandler
 }
 
 type Queries struct {
-	CheckIfItemsInStock query.CheckIfItemsInStockHandler
-	GetItems            query.GetItemsHandler
+	GetItems query.GetItemsHandler
 }
