@@ -102,39 +102,29 @@ func (r *OrderRepositoryMongo) Update(ctx context.Context, o *domain.Order, upda
 	}
 	defer session.EndSession(ctx)
 
-	if err = session.StartTransaction(); err != nil {
-		return err
-	}
-	defer func() {
-		if err == nil {
-			_ = session.CommitTransaction(ctx)
-		} else {
-			_ = session.AbortTransaction(ctx)
+	// v2 driver: collection 操作必须收到 sessionContext (WithTransaction 的 callback ctx)
+	// 才会参与事务；用普通 ctx 会让 read/write 静默地脱离事务，留下并发竞争窗口。
+	_, err = session.WithTransaction(ctx, func(sCtx context.Context) (any, error) {
+		oldOrder, err := r.Get(sCtx, o.ID, o.CustomerID)
+		if err != nil {
+			return nil, err
 		}
-	}()
-
-	oldOrder, err := r.Get(ctx, o.ID, o.CustomerID)
-	if err != nil {
-		return
-	}
-	updated, err := updateFunc(ctx, oldOrder)
-	if err != nil {
-		return
-	}
-	logrus.Infof("update || oldOrder=%+v || updated=%+v", oldOrder, updated)
-	mongoID, _ := primitive.ObjectIDFromHex(oldOrder.ID)
-	_, err = r.collection().UpdateOne(
-		ctx,
-		bson.M{"_id": mongoID, "customer_id": oldOrder.CustomerID},
-		bson.M{"$set": bson.M{
-			"status":       updated.Status.String(), // orderpb.OrderStatus → string
-			"payment_link": updated.PaymentLink,
-		}},
-	)
-
-	if err != nil {
-		return
-	}
+		updated, err := updateFunc(sCtx, oldOrder)
+		if err != nil {
+			return nil, err
+		}
+		logrus.Infof("update || oldOrder=%+v || updated=%+v", oldOrder, updated)
+		mongoID, _ := primitive.ObjectIDFromHex(oldOrder.ID)
+		_, err = r.collection().UpdateOne(
+			sCtx,
+			bson.M{"_id": mongoID, "customer_id": oldOrder.CustomerID},
+			bson.M{"$set": bson.M{
+				"status":       updated.Status.String(), // orderpb.OrderStatus → string
+				"payment_link": updated.PaymentLink,
+			}},
+		)
+		return nil, err
+	})
 
 	return
 }
