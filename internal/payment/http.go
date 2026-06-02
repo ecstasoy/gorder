@@ -97,7 +97,10 @@ func (h *PaymentHandler) HandleWebHook(c *gin.Context) {
 				attribute.String("exchange", broker.EventOrderPaid),
 			)
 
-			_ = h.publisher.Broadcast(ctx, broker.DomainEvent{
+			// ADR-0002 candidate 3 硬化:publish 失败时返回 5xx,让 Stripe 自动重试 webhook,
+			// 而不是静默吞错。idempotency 由 order 侧 ConfirmOrder saga 的 OrderID 幂等键
+			// 保证 —— Stripe 重发 webhook 时 order 侧的 confirm 是 no-op。
+			if pubErr := h.publisher.Broadcast(ctx, broker.DomainEvent{
 				Dest: broker.EventOrderPaid,
 				Data: broker.OrderPaidEvent{
 					ID:              session.Metadata["orderID"],
@@ -107,7 +110,12 @@ func (h *PaymentHandler) HandleWebHook(c *gin.Context) {
 					Items:           items,
 					PaymentIntentID: paymentIntentID,
 				},
-			})
+			}); pubErr != nil {
+				logrus.WithContext(ctx).Errorf("failed to publish order.paid for %s: %v", session.Metadata["orderID"], pubErr)
+				publishSpan.RecordError(pubErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "publish failed, please retry"})
+				return
+			}
 			publishSpan.AddEvent("message.published")
 		}
 	default:

@@ -64,6 +64,7 @@ func Connect(user, pwd, host, port string) (*amqp.Connection, *amqp.Channel, fun
 	// (QueueDeclare 和 Publish 一样是 channel 级操作,不是 thread-safe)
 	for _, q := range []string{
 		EventOrderCreated,
+		EventOrderCancelled, // ADR-0002: 接入 outbox
 		EventFlashSaleOrder,
 		EventOrderRefund,
 	} {

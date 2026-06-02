@@ -109,6 +109,17 @@ func (o *Order) Cancel() error {
 	return nil
 }
 
+// MarkPaid 把 Order 状态推到 PAID 并记录 OrderPaidEvent。同 Cancel 模式:
+// ADR-0002 引入,让 "支付成功" 成为具名领域动作。caller (ConfirmOrder saga)
+// 调它而不是手写 UpdateStatus(PAID)。
+func (o *Order) MarkPaid() error {
+	if err := o.UpdateStatus(orderpb.OrderStatus_ORDER_STATUS_PAID); err != nil {
+		return err
+	}
+	o.events = append(o.events, OrderPaidEvent{Order: o})
+	return nil
+}
+
 func (o *Order) isValidStatusTransition(to orderpb.OrderStatus) bool {
 	if o.Status == to {
 		return true

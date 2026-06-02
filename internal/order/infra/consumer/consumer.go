@@ -22,7 +22,8 @@ import (
 type Consumer struct {
 	app         app.Application
 	redisClient *goredis.Client
-	publisher   broker.Publisher
+	publisher   broker.Publisher       // 旧用法,部分路径仍直调
+	catalog     *broker.EventCatalog   // ADR-0002 candidate 7:typed publish
 }
 
 func NewConsumer(app app.Application, redisClient *goredis.Client, publisher broker.Publisher) *Consumer {
@@ -30,6 +31,7 @@ func NewConsumer(app app.Application, redisClient *goredis.Client, publisher bro
 		app:         app,
 		redisClient: redisClient,
 		publisher:   publisher,
+		catalog:     broker.NewEventCatalog(publisher),
 	}
 }
 
@@ -130,45 +132,40 @@ func (c *Consumer) handleMessage(ch *amqp.Channel, msg amqp.Delivery, q amqp.Que
 		err = errors.Wrap(err, "failed to unmarshal order")
 		return
 	}
-	o := &domain.Order{ID: paid.ID, CustomerID: paid.CustomerID, Status: paid.Status, PaymentLink: paid.PaymentLink}
 
-	_, err = c.app.Commands.UpdateOrder.Handle(ctx, command.UpdateOrder{
-		Order: o,
-		UpdateFunc: func(ctx context.Context, oldOrder *domain.Order) (*domain.Order, error) {
-			if err := oldOrder.UpdateStatus(o.Status); err != nil {
-				return nil, err
-			}
-			return oldOrder, nil
-		},
+	// ADR-0002: dispatch to ConfirmOrder saga,saga 内部完成 Mongo Tx { MarkPaid +
+	// outbox.Append(OrderPaidEvent) } + stockGRPC.Confirm(orderID)。
+	_, err = c.app.Commands.ConfirmOrder.Handle(ctx, command.ConfirmOrder{
+		OrderID:    paid.ID,
+		CustomerID: paid.CustomerID,
 	})
 
 	if err != nil {
 		var conflictErr *domain.StatusConflictError
 		if stderrors.As(err, &conflictErr) {
 			// 状态冲突：订单已被取消但用户付款成功，发起退款
-			logging.Warnf(ctx, nil, "Status conflict for order %s, publishing refund event", o.ID)
-			refundErr := c.publisher.Publish(ctx, broker.DomainEvent{
-				Dest: broker.EventOrderRefund,
-				Data: broker.OrderRefundPayload{
-					OrderID:         o.ID,
-					CustomerID:      o.CustomerID,
-					PaymentIntentID: paid.PaymentIntentID,
-				},
+			logging.Warnf(ctx, nil, "Status conflict for order %s, publishing refund event", paid.ID)
+			// ADR-0002 candidate 7: 通过 EventCatalog,routing 知识住在 broker 包,caller 不感知 direct/fanout。
+			refundErr := c.catalog.PublishOrderRefund(ctx, broker.OrderRefundPayload{
+				OrderID:         paid.ID,
+				CustomerID:      paid.CustomerID,
+				PaymentIntentID: paid.PaymentIntentID,
 			})
 			if refundErr != nil {
-				logging.Errorf(ctx, nil, "Failed to publish refund event for order %s: %v", o.ID, refundErr)
+				logging.Errorf(ctx, nil, "Failed to publish refund event for order %s: %v", paid.ID, refundErr)
 			}
 			// 冲突不重试，正常 ack
+			err = nil
 			return
 		}
-		logging.Errorf(ctx, nil, "Failed to update order, orderID: %s, error: %v", o.ID, err)
+		logging.Errorf(ctx, nil, "Failed to confirm order, orderID: %s, error: %v", paid.ID, err)
 		if retryErr := broker.HandleRetry(ctx, ch, &msg); retryErr != nil {
-			logging.Errorf(ctx, nil, "Failed to handle retry message, orderID: %s, error: %v", o.ID, retryErr)
+			logging.Errorf(ctx, nil, "Failed to handle retry message, orderID: %s, error: %v", paid.ID, retryErr)
 		}
 		return
 	}
 
-	span.AddEvent("order.updated")
+	span.AddEvent("order.confirmed")
 }
 
 func (c *Consumer) handlePaymentTimeout(ch *amqp.Channel, msg amqp.Delivery, q amqp.Queue) {

@@ -18,12 +18,19 @@ type OrderCreatedEvent struct {
 func (e OrderCreatedEvent) EventType() string { return "OrderCreated" }
 
 // OrderCancelledEvent 表示一个 pending Order 被取消 —— 来自支付超时
-// (延迟队列 DLX) 或者主动取消。Step 7 暂未给它接 outbox,目前还没有下游消费
-// `order.cancelled`;聚合自己产生事件、cancel handler 不 PullEvents,事件随
-// aggregate ref 一起被 GC。未来需要广播取消时,handler 像 intake saga 一样
-// PullEvents + translate 即可。
+// (延迟队列 DLX) 或者主动取消。ADR-0002 把它接入 outbox(通过 CancelOrder
+// saga 的 PullEvents),所以 cancel 路径现在和 intake 同形。
 type OrderCancelledEvent struct {
 	Order *Order
 }
 
 func (e OrderCancelledEvent) EventType() string { return "OrderCancelled" }
+
+// OrderPaidEvent 表示一个 Order 被标为 PAID (ADR-0002 引入)。
+// 由 ConfirmOrder saga 在 Mongo tx 里 record,通过 outbox 异步发布到 RabbitMQ
+// 替代 ADR-0001 时 payment 服务直接 publish 的 dual-write 路径。
+type OrderPaidEvent struct {
+	Order *Order
+}
+
+func (e OrderPaidEvent) EventType() string { return "OrderPaid" }

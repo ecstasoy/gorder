@@ -66,11 +66,17 @@ func newApplication(_ context.Context, stockGRPC query.StockService, redisClient
 	intakeSvc := intake.NewIntakeOrder(catalogResolver, stockGRPC, orderRepo, outboxAppender, txRunner)
 	flashIntake := intake.NewIntakeOrder(flashResolver, stockGRPC, orderRepo, outboxAppender, txRunner)
 
+	// ADR-0002: lifecycle saga 扩展。Confirm + Cancel 两个 saga 实例。
+	confirmSaga := intake.NewConfirmOrder(orderRepo, stockGRPC, outboxAppender, txRunner)
+	cancelSaga := intake.NewCancelOrder(orderRepo, stockGRPC, outboxAppender, txRunner)
+
 	return app.Application{
 		Commands: app.Commands{
 			CreateOrder:      command.NewCreateOrderHandler(intakeSvc, logger, metricsClient),
 			UpdateOrder:      command.NewUpdateOrderHandler(orderRepo, logger, metricsClient),
-			CancelOrder:      command.NewCancelOrderHandler(orderRepo, stockGRPC, logger, metricsClient),
+			SetPaymentLink:   command.NewSetPaymentLinkHandler(orderRepo, logger, metricsClient),
+			CancelOrder:      command.NewCancelOrderHandler(cancelSaga, logger, metricsClient),
+			ConfirmOrder:     command.NewConfirmOrderHandler(confirmSaga, logger, metricsClient),
 			CreateFlashOrder: command.NewCreateFlashOrderHandler(flashIntake, logger, metricsClient),
 		},
 		Queries: app.Queries{

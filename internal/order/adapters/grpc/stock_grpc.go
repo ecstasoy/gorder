@@ -47,6 +47,14 @@ func (s StockGRPC) Reserve(ctx context.Context, orderID string, items []*orderpb
 	return err
 }
 
+func (s StockGRPC) Confirm(ctx context.Context, orderID string) (err error) {
+	_, dLog := logging.WhenRequest(ctx, "StockGRPC.Confirm", map[string]any{"order_id": orderID})
+	defer dLog(nil, &err)
+
+	_, err = s.client.Confirm(ctx, &stockpb.ConfirmRequest{OrderID: orderID})
+	return err
+}
+
 func (s StockGRPC) Release(ctx context.Context, orderID string) (err error) {
 	_, dLog := logging.WhenRequest(ctx, "StockGRPC.Release", map[string]any{"order_id": orderID})
 	defer dLog(nil, &err)

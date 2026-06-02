@@ -4,9 +4,7 @@ import (
 	"context"
 
 	"github.com/ecstasoy/gorder/common/decorator"
-	"github.com/ecstasoy/gorder/common/genproto/orderpb"
-	"github.com/ecstasoy/gorder/order/app/query"
-	domain "github.com/ecstasoy/gorder/order/domain/order"
+	"github.com/ecstasoy/gorder/order/app/intake"
 	"github.com/sirupsen/logrus"
 )
 
@@ -20,63 +18,34 @@ type CancelOrderResult struct{}
 type CancelOrderHandler decorator.CommandHandler[CancelOrder, *CancelOrderResult]
 
 type cancelOrderHandler struct {
-	orderRepo domain.Repository
-	stockGRPC query.StockService
+	cancel intake.CancelOrder
 }
 
 func NewCancelOrderHandler(
-	orderRepo domain.Repository,
-	stockGRPC query.StockService,
+	cancel intake.CancelOrder,
 	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) CancelOrderHandler {
-	if orderRepo == nil {
-		panic("orderRepo cannot be nil")
+	if cancel == nil {
+		panic("nil cancel saga")
 	}
 	return decorator.ApplyCommandDecorators[CancelOrder, *CancelOrderResult](
-		cancelOrderHandler{
-			orderRepo: orderRepo,
-			stockGRPC: stockGRPC,
-		},
+		cancelOrderHandler{cancel: cancel},
 		logger,
 		metricsClient,
 	)
 }
 
-// Handle 按 ADR-0001 Step 7 改造:
-//   - 状态转移走 o.Cancel() (具名领域动作 + append OrderCancelledEvent),
-//     而不是手写 UpdateStatus(CANCELLED)
-//   - 库存归还走 stockGRPC.Release(orderID),不再用旧的 RestoreStock(items)。
-//     Release 是 reservation 感知的:对幂等的 held → released 转移、对
-//     已 confirmed 的 reservation 返回 conflict (不该 release 已支付的单)。
-//     不需要 caller 携带 items —— reservation 表自带 (order_id, items)。
+// Handle 退化为参数转换 + 调 saga。ADR-0002 落地后,Cancel 走 saga module,
+// PullEvents 进 outbox,Release 在 tx 后调用。原 handler 的 closure-in-Update
+// 写 status + handler 末尾调 stockGRPC.RestoreStock 的形态消失。
 func (h cancelOrderHandler) Handle(ctx context.Context, cmd CancelOrder) (*CancelOrderResult, error) {
-	var didCancel bool
-
-	err := h.orderRepo.Update(ctx,
-		&domain.Order{ID: cmd.OrderID, CustomerID: cmd.CustomerID},
-		func(ctx context.Context, o *domain.Order) (*domain.Order, error) {
-			if o.Status != orderpb.OrderStatus_ORDER_STATUS_PENDING {
-				return o, nil
-			}
-			if err := o.Cancel(); err != nil {
-				return nil, err
-			}
-			didCancel = true
-			return o, nil
-		},
-	)
+	_, err := h.cancel.Cancel(ctx, intake.CancelInput{
+		OrderID:    cmd.OrderID,
+		CustomerID: cmd.CustomerID,
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	if didCancel {
-		if err := h.stockGRPC.Release(ctx, cmd.OrderID); err != nil {
-			// 订单已取消,Release 失败只记录日志,不回滚 ——
-			// stock 服务的 zombie 扫描会兜底 (ADR-0001 Step 4 设计预留)。
-			logrus.WithContext(ctx).Errorf("order %s cancelled but Release failed: %v", cmd.OrderID, err)
-		}
-	}
-
 	return &CancelOrderResult{}, nil
 }

@@ -149,8 +149,9 @@ func (s *intakeOrder) Intake(ctx context.Context, in IntakeInput) (*entity.Order
 }
 
 // eventsToOutboxRecords 把 aggregate 产出的 domain event 翻译为 outbox 记录。
-// 与 OrderDomainService 里的同名方法功能一致 —— 抽出来后 Step 7 可以把
-// OrderDomainService 整个删掉。
+// 所有 saga (intake / confirm / cancel) 共用同一翻译表 (ADR-0002)。
+// 加新 event 类型时必须在这里登记,否则 saga 在 PullEvents 后会 return error
+// —— 这是有意的,aggregate 不该悄悄长出 saga 不认识的 event。
 func eventsToOutboxRecords(events []domain.DomainEvent) ([]domainsvc.OutboxRecord, error) {
 	records := make([]domainsvc.OutboxRecord, 0, len(events))
 	for _, e := range events {
@@ -163,6 +164,26 @@ func eventsToOutboxRecords(events []domain.DomainEvent) ([]domainsvc.OutboxRecor
 			records = append(records, domainsvc.OutboxRecord{
 				EventID: uuid.NewString(),
 				Dest:    broker.EventOrderCreated,
+				Kind:    domainsvc.OutboxKindQueue,
+				Payload: payload,
+			})
+		case domain.OrderPaidEvent:
+			// 注意:不要把 OrderPaidEvent bridge 到 outbox。order.paid 由 payment
+			// 服务在 Stripe webhook 时直接发出 (fanout exchange,kitchen + order
+			// 两侧消费)。如果 order 的 ConfirmOrder saga 也把它发到 outbox,会和
+			// payment 的发布产生循环:order.paid → confirm saga → 再 publish
+			// order.paid → 再 confirm... 永远停不下来。
+			// OrderPaidEvent 留在 aggregate 上作为 "状态转移的领域记录",但不出 saga。
+			_ = ev
+			continue
+		case domain.OrderCancelledEvent:
+			payload, err := json.Marshal(ev.Order)
+			if err != nil {
+				return nil, errors.Wrap(err, "marshal OrderCancelled")
+			}
+			records = append(records, domainsvc.OutboxRecord{
+				EventID: uuid.NewString(),
+				Dest:    broker.EventOrderCancelled, // direct queue;未来下游 (refund / notification) 订阅
 				Kind:    domainsvc.OutboxKindQueue,
 				Payload: payload,
 			})

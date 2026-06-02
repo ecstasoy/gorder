@@ -77,6 +77,7 @@ func initPublisherPool(conn *amqp.Connection, size int) error {
 const (
 	EventOrderCreated        = "order.created"
 	EventOrderPaid           = "order.paid"
+	EventOrderCancelled      = "order.cancelled" // ADR-0002: 加入 outbox 后,发到 direct queue,等下游订阅
 	EventOrderPaymentTimeout = "order.payment.timeout"
 	OrderPaymentDelayQueue   = "order.payment.delay"
 	OrderPaymentTimeoutDLX   = "order.payment.timeout.dlx"
