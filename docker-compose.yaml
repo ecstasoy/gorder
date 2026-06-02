@@ -46,17 +46,25 @@ services:
   order-mongo:
     image: "mongo:7.0.8"
     restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: password
+    # Single-node replica set so Mongo transactions are available
+    # (ADR-0001 Step 2 needs Order insert + outbox.Append atomic).
+    # Skip auth + run a one-shot rs.initiate() in a sidecar; connection
+    # string carries replicaSet=rs0&directConnection=true so the v2
+    # driver routes through the primary even on a 1-node set.
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--noauth"]
+    # Auth env removed — single-node replSet with auth would need a keyFile,
+    # too much for the dev compose. Connection string still carries root:password
+    # but mongo with --noauth accepts any credentials.
     ports:
       - "27017:27017"
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      # rs.initiate() must succeed before order can start a transaction.
+      # Returning rs.status().ok forces this gate before downstream services come up.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch(e) { 0 }"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 20s
+      retries: 20
+      start_period: 30s
 
   mongo-express:
     image: "mongo-express"

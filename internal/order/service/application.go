@@ -72,8 +72,12 @@ func newApplication(_ context.Context, stockGRPC query.StockService, redisClient
 }
 
 func newMongoClient() *mongo.Client {
+	// replicaSet + directConnection let the v2 driver route writes through
+	// the (single) primary of the local single-node rs0 — required by
+	// ADR-0001 Step 2 transactions. Production deployments are expected
+	// to swap the URI for a real multi-node replica set.
 	uri := fmt.Sprintf(
-		"mongodb://%s:%s@%s:%d/?authSource=admin",
+		"mongodb://%s:%s@%s:%d/?authSource=admin&replicaSet=rs0&directConnection=true",
 		viper.GetString("mongo.user"),
 		viper.GetString("mongo.password"),
 		viper.GetString("mongo.host"),
