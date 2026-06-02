@@ -5,22 +5,14 @@ import (
 	"fmt"
 
 	"github.com/ecstasoy/gorder/common/broker"
-	"github.com/ecstasoy/gorder/common/convertor"
 	"github.com/ecstasoy/gorder/common/decorator"
 	"github.com/ecstasoy/gorder/common/entity"
-	"github.com/ecstasoy/gorder/common/handler/redis"
 	"github.com/ecstasoy/gorder/common/logging"
-	"github.com/ecstasoy/gorder/common/metrics"
-	"github.com/ecstasoy/gorder/order/app/query"
-	domain "github.com/ecstasoy/gorder/order/domain/order"
-	"github.com/ecstasoy/gorder/order/domain/service"
+	"github.com/ecstasoy/gorder/order/app/intake"
 	"github.com/pkg/errors"
-	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 )
-
-const flashMetaKeyPrefix = "flash:meta:"
 
 type CreateFlashOrder struct {
 	CustomerID string
@@ -34,50 +26,30 @@ type CreateFlashOrderResult struct {
 type CreateFlashOrderHandler decorator.CommandHandler[CreateFlashOrder, *CreateFlashOrderResult]
 
 type createFlashOrderHandler struct {
-	orderRepo   domain.Repository
-	stockGRPC   query.StockService
-	redisClient *goredis.Client
-	outbox      service.OutboxAppender
-	tx          service.TxRunner
+	flashIntake intake.IntakeOrder
 }
 
 func NewCreateFlashOrderHandler(
-	orderRepo domain.Repository,
-	stockGRPC query.StockService,
-	redisClient *goredis.Client,
-	outbox service.OutboxAppender,
-	tx service.TxRunner,
+	flashIntake intake.IntakeOrder,
 	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) CreateFlashOrderHandler {
-	if orderRepo == nil {
-		panic("orderRepo cannot be nil")
-	}
-	if stockGRPC == nil {
-		panic("stockGRPC cannot be nil")
-	}
-	if redisClient == nil {
-		panic("redisClient cannot be nil")
-	}
-	if outbox == nil {
-		panic("nil outbox appender")
-	}
-	if tx == nil {
-		panic("nil tx runner")
+	if flashIntake == nil {
+		panic("nil flashIntake")
 	}
 	return decorator.ApplyCommandDecorators[CreateFlashOrder, *CreateFlashOrderResult](
-		createFlashOrderHandler{
-			orderRepo:   orderRepo,
-			stockGRPC:   stockGRPC,
-			redisClient: redisClient,
-			outbox:      outbox,
-			tx:          tx,
-		},
+		createFlashOrderHandler{flashIntake: flashIntake},
 		logger,
 		metricsClient,
 	)
 }
 
+// Handle 退化为参数转换 + saga 调用。flash 与常规 intake 共用同一个
+// IntakeOrder seam,区别只在构造时注入的 ItemResolver (Redis 优先 vs
+// 仅 Catalog) —— ADR-0001 "two adapters justify the seam"。
+//
+// 旧版本里手写的 DeductStock + on-error RestoreStock 补偿块已经被
+// saga 内部的 Reserve + Release 替代,不再重复。
 func (c createFlashOrderHandler) Handle(ctx context.Context, cmd CreateFlashOrder) (*CreateFlashOrderResult, error) {
 	var err error
 	defer logging.WhenCommandExecute(ctx, "CreateFlashOrderHandler.Handle", CreateFlashOrder{
@@ -90,72 +62,15 @@ func (c createFlashOrderHandler) Handle(ctx context.Context, cmd CreateFlashOrde
 	defer span.End()
 
 	if len(cmd.Items) == 0 {
-		return nil, errors.New("order must contain at least one item")
+		return nil, errors.New("flash order must contain at least one item")
 	}
 
-	validItems, err := c.resolveItems(ctx, cmd.Items)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to resolve items")
-	}
-
-	protoQty := convertor.NewItemWithQuantityConvertor().EntitiesToProtos(cmd.Items)
-	if err = c.stockGRPC.DeductStock(ctx, protoQty); err != nil {
-		return nil, errors.Wrap(err, "failed to deduct flash stock")
-	}
-
-	pendingOrder, err := domain.NewPendingOrder(cmd.CustomerID, validItems)
+	o, err := c.flashIntake.Intake(ctx, intake.IntakeInput{
+		CustomerID: cmd.CustomerID,
+		RawItems:   packItems(cmd.Items),
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	o, err := service.NewOrderDomainService(c.orderRepo, c.outbox, c.tx).CreateOrder(ctx, pendingOrder)
-
-	if err != nil {
-		// MySQL 已扣,Mongo 或 publish 失败 → 补偿回滚库存
-		metrics.StockRestoreTotal.WithLabelValues("persist_or_publish_failed").Inc()
-		if restoreErr := c.stockGRPC.RestoreStock(ctx, protoQty); restoreErr != nil {
-			logging.Errorf(ctx, nil, "RestoreStock compensation failed after persistAndPublish err: %v", restoreErr)
-		}
-		return nil, err
-	}
-
 	return &CreateFlashOrderResult{OrderID: o.ID}, nil
-}
-
-func (c createFlashOrderHandler) resolveItems(ctx context.Context, items []*entity.ItemWithQuantity) ([]*entity.Item, error) {
-	resolved := make([]*entity.Item, 0, len(items))
-	qtyByID := make(map[string]int32, len(items))
-	var missingIDs []string
-
-	for _, item := range items {
-		qtyByID[item.ID] = item.Quantity
-
-		meta, err := redis.GetFlashMeta(ctx, c.redisClient, flashMetaKeyPrefix+item.ID)
-		if err == nil {
-			resolved = append(resolved, entity.NewItem(item.ID, meta.Name, item.Quantity, meta.PriceID))
-			continue
-		}
-		if !errors.Is(err, goredis.Nil) {
-			logging.Warnf(ctx, nil, "flash meta redis get failed, id=%s err=%v", item.ID, err)
-		}
-		missingIDs = append(missingIDs, item.ID)
-	}
-
-	if len(missingIDs) == 0 {
-		return resolved, nil
-	}
-
-	protoItems, err := c.stockGRPC.GetItems(ctx, missingIDs)
-	if err != nil {
-		return nil, errors.Wrapf(err, "resolve items via stock gRPC, ids=%v", missingIDs)
-	}
-	if len(protoItems) != len(missingIDs) {
-		return nil, errors.Errorf("stock gRPC returned %d items for %d ids", len(protoItems), len(missingIDs))
-	}
-
-	for _, p := range protoItems {
-		resolved = append(resolved, entity.NewItem(p.ID, p.Name, qtyByID[p.ID], p.PriceID))
-	}
-
-	return resolved, nil
 }

@@ -59,17 +59,19 @@ func newApplication(_ context.Context, stockGRPC query.StockService, redisClient
 	outboxAppender := &outboxAppenderAdapter{repo: outboxRepo}
 	txRunner := &mongoTxRunner{client: mongoClient}
 
-	// ADR-0001 Step 5: 常规 intake saga + CatalogResolver。flash 路径仍走 OrderDomainService,
-	// Step 6 加 FlashResolver 后切到 saga。
+	// ADR-0001 Step 5 + 6: 两个 IntakeOrder 实例 —— 共享 saga 但注入不同 resolver。
+	// 这是 "two adapters justify the seam" 的真实落地。
 	catalogResolver := intake.NewCatalogResolver(stockGRPC)
+	flashResolver := intake.NewFlashResolver(redisClient, stockGRPC)
 	intakeSvc := intake.NewIntakeOrder(catalogResolver, stockGRPC, orderRepo, outboxAppender, txRunner)
+	flashIntake := intake.NewIntakeOrder(flashResolver, stockGRPC, orderRepo, outboxAppender, txRunner)
 
 	return app.Application{
 		Commands: app.Commands{
 			CreateOrder:      command.NewCreateOrderHandler(intakeSvc, logger, metricsClient),
 			UpdateOrder:      command.NewUpdateOrderHandler(orderRepo, logger, metricsClient),
 			CancelOrder:      command.NewCancelOrderHandler(orderRepo, stockGRPC, logger, metricsClient),
-			CreateFlashOrder: command.NewCreateFlashOrderHandler(orderRepo, stockGRPC, redisClient, outboxAppender, txRunner, logger, metricsClient),
+			CreateFlashOrder: command.NewCreateFlashOrderHandler(flashIntake, logger, metricsClient),
 		},
 		Queries: app.Queries{
 			GetCustomerOrder: query.NewGetCustomerOrderHandler(orderRepo, logrus.StandardLogger(), metricsClient),
