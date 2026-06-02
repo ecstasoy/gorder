@@ -37,14 +37,16 @@ type createFlashOrderHandler struct {
 	orderRepo   domain.Repository
 	stockGRPC   query.StockService
 	redisClient *goredis.Client
-	publisher   broker.Publisher
+	outbox      service.OutboxAppender
+	tx          service.TxRunner
 }
 
 func NewCreateFlashOrderHandler(
 	orderRepo domain.Repository,
 	stockGRPC query.StockService,
 	redisClient *goredis.Client,
-	publisher broker.Publisher,
+	outbox service.OutboxAppender,
+	tx service.TxRunner,
 	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) CreateFlashOrderHandler {
@@ -57,15 +59,19 @@ func NewCreateFlashOrderHandler(
 	if redisClient == nil {
 		panic("redisClient cannot be nil")
 	}
-	if publisher == nil {
-		panic("publisher cannot be nil")
+	if outbox == nil {
+		panic("nil outbox appender")
+	}
+	if tx == nil {
+		panic("nil tx runner")
 	}
 	return decorator.ApplyCommandDecorators[CreateFlashOrder, *CreateFlashOrderResult](
 		createFlashOrderHandler{
 			orderRepo:   orderRepo,
 			stockGRPC:   stockGRPC,
 			redisClient: redisClient,
-			publisher:   publisher,
+			outbox:      outbox,
+			tx:          tx,
 		},
 		logger,
 		metricsClient,
@@ -102,7 +108,7 @@ func (c createFlashOrderHandler) Handle(ctx context.Context, cmd CreateFlashOrde
 		return nil, err
 	}
 
-	o, err := service.NewOrderDomainService(c.orderRepo, c.publisher).CreateOrder(ctx, *pendingOrder)
+	o, err := service.NewOrderDomainService(c.orderRepo, c.outbox, c.tx).CreateOrder(ctx, *pendingOrder)
 
 	if err != nil {
 		// MySQL 已扣,Mongo 或 publish 失败 → 补偿回滚库存

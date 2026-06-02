@@ -14,6 +14,8 @@ import (
 	"github.com/ecstasoy/gorder/order/app"
 	"github.com/ecstasoy/gorder/order/app/command"
 	"github.com/ecstasoy/gorder/order/app/query"
+	domainsvc "github.com/ecstasoy/gorder/order/domain/service"
+	"github.com/ecstasoy/gorder/order/infra/outbox"
 	amqp "github.com/rabbitmq/amqp091-go"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
@@ -23,7 +25,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
-func NewApplication(ctx context.Context) (app.Application, query.StockService, *goredis.Client, *mongo.Client, func()) {
+func NewApplication(ctx context.Context) (app.Application, query.StockService, *goredis.Client, *outbox.MongoOutboxRepo, func()) {
 	stockClient, err := grpcClient.NewStockGRPCClient(ctx)
 	if err != nil {
 		panic(err)
@@ -38,23 +40,30 @@ func NewApplication(ctx context.Context) (app.Application, query.StockService, *
 	redis.Init()
 	redisClient := redis.LocalClient()
 	mongoClient := newMongoClient()
-	return newApplication(ctx, stockGRPC, redisClient, ch, mongoClient), stockGRPC, redisClient, mongoClient, func() {
+	outboxRepo, err := outbox.NewMongoOutboxRepo(ctx, mongoClient)
+	if err != nil {
+		panic(fmt.Errorf("failed to create outbox repo: %w", err))
+	}
+	return newApplication(ctx, stockGRPC, redisClient, ch, mongoClient, outboxRepo), stockGRPC, redisClient, outboxRepo, func() {
 		_ = grpcClient.CloseStockClient()
 		_ = closeCh()
 	}
 }
 
-func newApplication(_ context.Context, stockGRPC query.StockService, redisClient *goredis.Client, ch *amqp.Channel, mongoClient *mongo.Client) app.Application {
+func newApplication(_ context.Context, stockGRPC query.StockService, redisClient *goredis.Client, _ *amqp.Channel, mongoClient *mongo.Client, outboxRepo *outbox.MongoOutboxRepo) app.Application {
 	orderRepo := adapters.NewOrderRepositoryMongo(mongoClient)
 	metricsClient := metrics.NewPrometheusMetricsClient()
 	logger := logrus.StandardLogger()
-	publisher := broker.NewRabbitMQPublisher(ch)
+
+	outboxAppender := &outboxAppenderAdapter{repo: outboxRepo}
+	txRunner := &mongoTxRunner{client: mongoClient}
+
 	return app.Application{
 		Commands: app.Commands{
-			CreateOrder:      command.NewCreateOrderHandler(orderRepo, stockGRPC, publisher, logger, metricsClient),
+			CreateOrder:      command.NewCreateOrderHandler(orderRepo, stockGRPC, outboxAppender, txRunner, logger, metricsClient),
 			UpdateOrder:      command.NewUpdateOrderHandler(orderRepo, logger, metricsClient),
 			CancelOrder:      command.NewCancelOrderHandler(orderRepo, stockGRPC, logger, metricsClient),
-			CreateFlashOrder: command.NewCreateFlashOrderHandler(orderRepo, stockGRPC, redisClient, publisher, logger, metricsClient),
+			CreateFlashOrder: command.NewCreateFlashOrderHandler(orderRepo, stockGRPC, redisClient, outboxAppender, txRunner, logger, metricsClient),
 		},
 		Queries: app.Queries{
 			GetCustomerOrder: query.NewGetCustomerOrderHandler(orderRepo, logrus.StandardLogger(), metricsClient),
@@ -85,4 +94,42 @@ func newMongoClient() *mongo.Client {
 
 	logrus.Infof("Successfully connected to MongoDB at %s", uri)
 	return c
+}
+
+// outboxAppenderAdapter 实现 domainsvc.OutboxAppender —— 把 domain 层的简化
+// OutboxRecord 透传到 infra/outbox.Record。adapter 不做映射逻辑,只做类型搬运。
+type outboxAppenderAdapter struct {
+	repo *outbox.MongoOutboxRepo
+}
+
+func (a *outboxAppenderAdapter) Append(ctx context.Context, records []domainsvc.OutboxRecord) error {
+	converted := make([]outbox.Record, len(records))
+	for i, r := range records {
+		converted[i] = outbox.Record{
+			EventID: r.EventID,
+			Dest:    r.Dest,
+			Kind:    r.Kind,
+			Payload: r.Payload,
+		}
+	}
+	return a.repo.Append(ctx, converted)
+}
+
+// mongoTxRunner 实现 domainsvc.TxRunner —— 把 Mongo session/transaction 藏在
+// application 层,domain service 调用时不需要知道 mongo.Client 存在。
+type mongoTxRunner struct {
+	client *mongo.Client
+}
+
+func (t *mongoTxRunner) Run(ctx context.Context, fn func(ctx context.Context) error) error {
+	session, err := t.client.StartSession()
+	if err != nil {
+		return err
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(sCtx context.Context) (any, error) {
+		return nil, fn(sCtx)
+	})
+	return err
 }

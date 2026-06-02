@@ -32,13 +32,15 @@ type CreateOrderHandler decorator.CommandHandler[CreateOrder, *CreateOrderResult
 type createOrderHandler struct {
 	orderRepo domain.Repository
 	stockGRPC query.StockService
-	publisher broker.Publisher
+	outbox    service.OutboxAppender
+	tx        service.TxRunner
 }
 
 func NewCreateOrderHandler(
 	orderRepo domain.Repository,
 	stockGRPC query.StockService,
-	publisher broker.Publisher,
+	outbox service.OutboxAppender,
+	tx service.TxRunner,
 	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) CreateOrderHandler {
@@ -48,14 +50,18 @@ func NewCreateOrderHandler(
 	if stockGRPC == nil {
 		panic("stockGRPC cannot be nil")
 	}
-	if publisher == nil {
-		panic("nil publisher")
+	if outbox == nil {
+		panic("nil outbox appender")
+	}
+	if tx == nil {
+		panic("nil tx runner")
 	}
 	return decorator.ApplyCommandDecorators[CreateOrder, *CreateOrderResult](
 		createOrderHandler{
 			orderRepo: orderRepo,
 			stockGRPC: stockGRPC,
-			publisher: publisher,
+			outbox:    outbox,
+			tx:        tx,
 		},
 		logger,
 		metricsClient,
@@ -80,7 +86,7 @@ func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*Creat
 		return nil, err
 	}
 
-	o, err := service.NewOrderDomainService(c.orderRepo, c.publisher).CreateOrder(ctx, *pendingOrder)
+	o, err := service.NewOrderDomainService(c.orderRepo, c.outbox, c.tx).CreateOrder(ctx, *pendingOrder)
 	if err != nil {
 		return nil, err
 	}

@@ -37,7 +37,7 @@ func main() {
 	}
 	defer shutdown(ctx)
 
-	application, stockGRPC, redisClient, mongoClient, cleanup := service.NewApplication(ctx)
+	application, stockGRPC, redisClient, outboxRepo, cleanup := service.NewApplication(ctx)
 	defer cleanup()
 
 	conn, ch, closeCh := broker.Connect(
@@ -75,12 +75,8 @@ func main() {
 	go c.Listen(orderPaidCh)
 	go c.ListenFlashSaleOrders(flashSaleCh)
 
-	// ADR-0001 Step 1: outbox 基础设施就位。collection 暂时无 caller 写入，worker 跑空轮询。
-	// Step 2 会切第一条事件 (order.created) 到 outbox。
-	outboxRepo, err := outbox.NewMongoOutboxRepo(ctx, mongoClient)
-	if err != nil {
-		logrus.Fatalf("failed to create outbox repo: %v", err)
-	}
+	// ADR-0001 Step 2: order.created + payment.delay 走 outbox。
+	// outboxRepo 由 service.NewApplication 创建并注入 OrderDomainService;此处只装 worker。
 	outboxPublisher := broker.NewRabbitMQPublisher(outboxCh)
 	outboxWorker := outbox.NewWorker(outboxRepo, outboxPublisher)
 	go outboxWorker.Run(ctx)
