@@ -14,6 +14,10 @@ type Commands struct {
 	RestoreStock     command.RestoreStockHandler
 	WarmUpFlashStock command.WarmUpFlashStockHandler
 	DeductStock      command.DeductStockHandler
+	// ADR-0001 Step 4
+	ReserveStock command.ReserveStockHandler
+	ConfirmStock command.ConfirmStockHandler
+	ReleaseStock command.ReleaseStockHandler
 }
 
 type Queries struct {

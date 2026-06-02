@@ -95,3 +95,51 @@ func (G GRPCServer) DeductStock(ctx context.Context, request *stockpb.DeductStoc
 	}
 	return &stockpb.DeductStockResponse{}, nil
 }
+
+// Reserve / Confirm / Release — ADR-0001 Step 4.
+// OrderID 是幂等键;domain 错误类型 (NotFoundError / ConflictError /
+// InsufficientStockError) 暂时统一映射为 codes.Internal,后续 step 给 saga
+// 提供更细致的错误码后再分类。
+
+func (G GRPCServer) Reserve(ctx context.Context, request *stockpb.ReserveRequest) (*stockpb.ReserveResponse, error) {
+	_, span := tracing.Start(ctx, "grpc.Reserve")
+	defer span.End()
+
+	_, err := G.app.Commands.ReserveStock.Handle(ctx, command.ReserveStock{
+		OrderID: request.OrderID,
+		Items:   convertor.NewItemWithQuantityConvertor().ProtosToEntities(request.Items),
+	})
+	if err != nil {
+		logrus.Errorf("error handling Reserve command: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stockpb.ReserveResponse{}, nil
+}
+
+func (G GRPCServer) Confirm(ctx context.Context, request *stockpb.ConfirmRequest) (*stockpb.ConfirmResponse, error) {
+	_, span := tracing.Start(ctx, "grpc.Confirm")
+	defer span.End()
+
+	_, err := G.app.Commands.ConfirmStock.Handle(ctx, command.ConfirmStock{
+		OrderID: request.OrderID,
+	})
+	if err != nil {
+		logrus.Errorf("error handling Confirm command: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stockpb.ConfirmResponse{}, nil
+}
+
+func (G GRPCServer) Release(ctx context.Context, request *stockpb.ReleaseRequest) (*stockpb.ReleaseResponse, error) {
+	_, span := tracing.Start(ctx, "grpc.Release")
+	defer span.End()
+
+	_, err := G.app.Commands.ReleaseStock.Handle(ctx, command.ReleaseStock{
+		OrderID: request.OrderID,
+	})
+	if err != nil {
+		logrus.Errorf("error handling Release command: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stockpb.ReleaseResponse{}, nil
+}

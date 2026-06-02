@@ -17,6 +17,7 @@ import (
 func NewApplication(_ context.Context) (app.Application, func()) {
 	db := persistent.NewMySQL()
 	stockRepo := adapters.NewMySQLStockRepository(db)
+	reservationRepo := adapters.NewMySQLReservationRepository(db)
 	stripeAPI := integration.NewStripeAPI()
 	metricsClient := metrics.NewPrometheusMetricsClient()
 	redis.Init()
@@ -28,6 +29,9 @@ func NewApplication(_ context.Context) (app.Application, func()) {
 			RestoreStock:     command.NewRestoreStockHandler(stockRepo, logger, metricsClient),
 			WarmUpFlashStock: command.NewWarmUpFlashStockHandler(stockRepo, stripeAPI, redisClient, logger, metricsClient),
 			DeductStock:      command.NewDeductStockHandler(stockRepo, logger, metricsClient),
+			ReserveStock:     command.NewReserveStockHandler(reservationRepo, logger, metricsClient),
+			ConfirmStock:     command.NewConfirmStockHandler(reservationRepo, logger, metricsClient),
+			ReleaseStock:     command.NewReleaseStockHandler(reservationRepo, logger, metricsClient),
 		},
 		Queries: app.Queries{
 			CheckIfItemsInStock: query.NewCheckIfItemsInStockHandler(stockRepo, stripeAPI, logger, metricsClient),

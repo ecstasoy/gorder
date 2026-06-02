@@ -11,6 +11,14 @@ service StockService {
   rpc RestoreStock(RestoreStockRequest) returns (RestoreStockResponse);
   rpc WarmUpFlashStock(WarmUpFlashStockRequest) returns (WarmUpFlashStockResponse);
   rpc DeductStock(DeductStockRequest) returns (DeductStockResponse);
+
+  // ADR-0001 Step 4: Reserve / Confirm / Release lifecycle. Replaces
+  // DeductStock + RestoreStock in the long run; both kept until Step 7.
+  // OrderID is the idempotency key — repeated calls on the same OrderID
+  // are no-ops once the terminal state is reached.
+  rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc Confirm(ConfirmRequest) returns (ConfirmResponse);
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
 }
 
 message RestoreStockRequest {
@@ -47,3 +55,19 @@ message DeductStockRequest {
   repeated orderpb.ItemWithQuantity Items = 1;
 }
 message DeductStockResponse {}
+
+message ReserveRequest {
+  string OrderID = 1;
+  repeated orderpb.ItemWithQuantity Items = 2;
+}
+message ReserveResponse {}
+
+message ConfirmRequest {
+  string OrderID = 1;
+}
+message ConfirmResponse {}
+
+message ReleaseRequest {
+  string OrderID = 1;
+}
+message ReleaseResponse {}
