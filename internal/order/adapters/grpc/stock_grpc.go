@@ -65,3 +65,19 @@ func (s StockGRPC) DeductStock(ctx context.Context, items []*orderpb.ItemWithQua
 	_, err = s.client.DeductStock(ctx, &stockpb.DeductStockRequest{Items: items})
 	return err
 }
+
+func (s StockGRPC) Reserve(ctx context.Context, orderID string, items []*orderpb.ItemWithQuantity) (err error) {
+	_, dLog := logging.WhenRequest(ctx, "StockGRPC.Reserve", map[string]any{"order_id": orderID, "items": items})
+	defer dLog(nil, &err)
+
+	_, err = s.client.Reserve(ctx, &stockpb.ReserveRequest{OrderID: orderID, Items: items})
+	return err
+}
+
+func (s StockGRPC) Release(ctx context.Context, orderID string) (err error) {
+	_, dLog := logging.WhenRequest(ctx, "StockGRPC.Release", map[string]any{"order_id": orderID})
+	defer dLog(nil, &err)
+
+	_, err = s.client.Release(ctx, &stockpb.ReleaseRequest{OrderID: orderID})
+	return err
+}

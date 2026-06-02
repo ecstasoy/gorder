@@ -5,17 +5,12 @@ import (
 	"fmt"
 
 	"github.com/ecstasoy/gorder/common/broker"
-	"github.com/ecstasoy/gorder/common/convertor"
 	"github.com/ecstasoy/gorder/common/decorator"
 	"github.com/ecstasoy/gorder/common/entity"
 	"github.com/ecstasoy/gorder/common/logging"
-	"github.com/ecstasoy/gorder/order/app/query"
-	domain "github.com/ecstasoy/gorder/order/domain/order"
-	"github.com/ecstasoy/gorder/order/domain/service"
-	"github.com/pkg/errors"
+	"github.com/ecstasoy/gorder/order/app/intake"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
-	"google.golang.org/grpc/status"
 )
 
 type CreateOrder struct {
@@ -30,44 +25,26 @@ type CreateOrderResult struct {
 type CreateOrderHandler decorator.CommandHandler[CreateOrder, *CreateOrderResult]
 
 type createOrderHandler struct {
-	orderRepo domain.Repository
-	stockGRPC query.StockService
-	outbox    service.OutboxAppender
-	tx        service.TxRunner
+	intake intake.IntakeOrder
 }
 
 func NewCreateOrderHandler(
-	orderRepo domain.Repository,
-	stockGRPC query.StockService,
-	outbox service.OutboxAppender,
-	tx service.TxRunner,
+	intakeSvc intake.IntakeOrder,
 	logger *logrus.Logger,
 	metricsClient decorator.MetricsClient,
 ) CreateOrderHandler {
-	if orderRepo == nil {
-		panic("orderRepo cannot be nil")
-	}
-	if stockGRPC == nil {
-		panic("stockGRPC cannot be nil")
-	}
-	if outbox == nil {
-		panic("nil outbox appender")
-	}
-	if tx == nil {
-		panic("nil tx runner")
+	if intakeSvc == nil {
+		panic("nil intake")
 	}
 	return decorator.ApplyCommandDecorators[CreateOrder, *CreateOrderResult](
-		createOrderHandler{
-			orderRepo: orderRepo,
-			stockGRPC: stockGRPC,
-			outbox:    outbox,
-			tx:        tx,
-		},
+		createOrderHandler{intake: intakeSvc},
 		logger,
 		metricsClient,
 	)
 }
 
+// Handle 退化为参数转换 + saga 调用 —— resolve / reserve / persist + outbox /
+// compensate 全在 intake module 内。ADR-0001 Step 5。
 func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*CreateOrderResult, error) {
 	var err error
 	defer logging.WhenCommandExecute(ctx, "CreateOrderHandler.Handle", cmd, err)
@@ -76,42 +53,24 @@ func (c createOrderHandler) Handle(ctx context.Context, cmd CreateOrder) (*Creat
 	ctx, span := t.Start(ctx, fmt.Sprintf("rabbitmq.%s.publish", broker.EventOrderCreated))
 	defer span.End()
 
-	validItems, err := c.validate(ctx, cmd.Items)
+	o, err := c.intake.Intake(ctx, intake.IntakeInput{
+		CustomerID: cmd.CustomerID,
+		RawItems:   packItems(cmd.Items),
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	pendingOrder, err := domain.NewPendingOrder(cmd.CustomerID, validItems)
-	if err != nil {
-		return nil, err
-	}
-
-	o, err := service.NewOrderDomainService(c.orderRepo, c.outbox, c.tx).CreateOrder(ctx, pendingOrder)
-	if err != nil {
-		return nil, err
-	}
-
 	return &CreateOrderResult{OrderID: o.ID}, nil
 }
 
-func (c createOrderHandler) validate(ctx context.Context, items []*entity.ItemWithQuantity) ([]*entity.Item, error) {
-	if len(items) == 0 {
-		return nil, errors.New("no items provided")
-	}
-	items = packItems(items)
-	resp, err := c.stockGRPC.CheckIfItemsInStock(ctx, convertor.NewItemWithQuantityConvertor().EntitiesToProtos(items))
-	if err != nil {
-		return nil, status.Convert(err).Err()
-	}
-	return convertor.NewItemConvertor().ProtosToEntities(resp.Items), nil
-}
-
+// packItems 合并同 ID 行的 quantity —— 客户端传 [{id:A,1},{id:A,2}] 时
+// 合并成 [{id:A,3}],避免 reservation 表 UNIQUE KEY 冲突。
 func packItems(items []*entity.ItemWithQuantity) []*entity.ItemWithQuantity {
 	merged := make(map[string]int32)
 	for _, item := range items {
 		merged[item.ID] += item.Quantity
 	}
-	var res []*entity.ItemWithQuantity
+	res := make([]*entity.ItemWithQuantity, 0, len(merged))
 	for id, quantity := range merged {
 		res = append(res, entity.NewItemWithQuantity(id, quantity))
 	}

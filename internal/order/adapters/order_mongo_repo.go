@@ -8,6 +8,7 @@ import (
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
 	"github.com/ecstasoy/gorder/common/logging"
 	domain "github.com/ecstasoy/gorder/order/domain/order"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"go.mongodb.org/mongo-driver/bson"
@@ -45,7 +46,18 @@ func (r *OrderRepositoryMongo) Create(ctx context.Context, order *domain.Order) 
 	_, deferLog := logging.WhenRequest(ctx, "OrderRepositoryMongo.Create", map[string]any{"order": order})
 	defer deferLog(created, &err)
 
-	mongoID := primitive.NewObjectID()
+	// ADR-0001 Step 5: saga 在 Reserve 之前生成 OrderID,Create 必须尊重它,
+	// 否则 saga 持有的 ID (用作 reservation 幂等键) 会和 Mongo 实际写入的
+	// _id 不一致 —— 补偿调 Release 时 stock 找不到 row。
+	var mongoID primitive.ObjectID
+	if order.ID != "" {
+		mongoID, err = primitive.ObjectIDFromHex(order.ID)
+		if err != nil {
+			return nil, errors.Wrap(err, "OrderRepositoryMongo.Create: invalid pre-set ID hex")
+		}
+	} else {
+		mongoID = primitive.NewObjectID()
+	}
 	write := r.marshalToModel(order)
 	write.MongoID = mongoID
 

@@ -13,6 +13,7 @@ import (
 	"github.com/ecstasoy/gorder/order/adapters/grpc"
 	"github.com/ecstasoy/gorder/order/app"
 	"github.com/ecstasoy/gorder/order/app/command"
+	"github.com/ecstasoy/gorder/order/app/intake"
 	"github.com/ecstasoy/gorder/order/app/query"
 	domainsvc "github.com/ecstasoy/gorder/order/domain/service"
 	"github.com/ecstasoy/gorder/order/infra/outbox"
@@ -58,9 +59,14 @@ func newApplication(_ context.Context, stockGRPC query.StockService, redisClient
 	outboxAppender := &outboxAppenderAdapter{repo: outboxRepo}
 	txRunner := &mongoTxRunner{client: mongoClient}
 
+	// ADR-0001 Step 5: 常规 intake saga + CatalogResolver。flash 路径仍走 OrderDomainService,
+	// Step 6 加 FlashResolver 后切到 saga。
+	catalogResolver := intake.NewCatalogResolver(stockGRPC)
+	intakeSvc := intake.NewIntakeOrder(catalogResolver, stockGRPC, orderRepo, outboxAppender, txRunner)
+
 	return app.Application{
 		Commands: app.Commands{
-			CreateOrder:      command.NewCreateOrderHandler(orderRepo, stockGRPC, outboxAppender, txRunner, logger, metricsClient),
+			CreateOrder:      command.NewCreateOrderHandler(intakeSvc, logger, metricsClient),
 			UpdateOrder:      command.NewUpdateOrderHandler(orderRepo, logger, metricsClient),
 			CancelOrder:      command.NewCancelOrderHandler(orderRepo, stockGRPC, logger, metricsClient),
 			CreateFlashOrder: command.NewCreateFlashOrderHandler(orderRepo, stockGRPC, redisClient, outboxAppender, txRunner, logger, metricsClient),

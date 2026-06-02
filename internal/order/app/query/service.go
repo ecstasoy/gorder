@@ -13,4 +13,7 @@ type StockService interface {
 	RestoreStock(ctx context.Context, items []*orderpb.ItemWithQuantity) error
 	WarmUpFlashStock(ctx context.Context, items []*orderpb.ItemWithQuantity, ttlSeconds int64) error
 	DeductStock(ctx context.Context, items []*orderpb.ItemWithQuantity) error
+	// ADR-0001 Step 4 — saga 通过这两个方法控制 reservation lifecycle。
+	Reserve(ctx context.Context, orderID string, items []*orderpb.ItemWithQuantity) error
+	Release(ctx context.Context, orderID string) error
 }
