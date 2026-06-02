@@ -7,8 +7,7 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
@@ -55,7 +54,7 @@ func (r *MongoOutboxRepo) Append(ctx context.Context, records []Record) error {
 	for i := range records {
 		rec := &records[i]
 		if rec.MongoID.IsZero() {
-			rec.MongoID = primitive.NewObjectID()
+			rec.MongoID = bson.NewObjectID()
 		}
 		if rec.EventID == "" {
 			return fmt.Errorf("outbox: record %d missing event_id", i)
@@ -98,7 +97,7 @@ func (r *MongoOutboxRepo) ClaimNext(ctx context.Context) (*Record, error) {
 	return &rec, nil
 }
 
-func (r *MongoOutboxRepo) MarkSent(ctx context.Context, id primitive.ObjectID) error {
+func (r *MongoOutboxRepo) MarkSent(ctx context.Context, id bson.ObjectID) error {
 	now := time.Now().UTC()
 	_, err := r.collection().UpdateOne(ctx, bson.M{"_id": id}, bson.M{
 		"$set": bson.M{
@@ -112,7 +111,7 @@ func (r *MongoOutboxRepo) MarkSent(ctx context.Context, id primitive.ObjectID) e
 
 // MarkFailed 退回 pending (等下次 tick 重试) 或终止为 failed (达上限)。
 // 终态不删 record —— 留给运维 / 对账任务处理。
-func (r *MongoOutboxRepo) MarkFailed(ctx context.Context, id primitive.ObjectID, errMsg string, terminal bool) error {
+func (r *MongoOutboxRepo) MarkFailed(ctx context.Context, id bson.ObjectID, errMsg string, terminal bool) error {
 	now := time.Now().UTC()
 	status := StatusPending
 	if terminal {

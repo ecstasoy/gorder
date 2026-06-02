@@ -3,7 +3,7 @@ package outbox
 import (
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // Status 状态机：pending → processing → sent (或 failed)。
@@ -28,7 +28,7 @@ const CollectionName = "order_outbox"
 // 事务里完成；后台 worker 拉取、发送、标记 sent。Payload 是已经 JSON 序列化
 // 的事件 body —— worker 直接转发，不再做二次编码。
 type Record struct {
-	MongoID   primitive.ObjectID `bson:"_id"`
+	MongoID   bson.ObjectID `bson:"_id"`
 	EventID   string             `bson:"event_id"` // 下游用它去重 (at-least-once 投递)
 	Dest      string             `bson:"dest"`     // queue 名 或 exchange 名 (Kind=Delayed 时忽略)
 	Kind      string             `bson:"kind"`
