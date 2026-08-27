@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order
+  namespace: gorder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order
+  template:
+    metadata:
+      labels:
+        app: order
+    spec:
+      containers:
+        - name: order
+          image: gorder-order:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONFIG_DIR
+              value: /app/config
+            - name: CONSUL_ADDR
+              value: consul:8500
+            - name: JAEGER_URL
+              value: http://jaeger:14268/api/traces
+            - name: RABBITMQ_HOST
+              value: rabbit-mq
+            - name: REDIS_LOCAL_IP
+              value: redis
+            - name: LOG_LEVEL
+              value: info
+            # order-specific
+            - name: ORDER_HTTP_ADDR
+              value: "0.0.0.0:9090"
+            - name: ORDER_GRPC_ADDR
+              value: ":5002"
+            - name: ORDER_GRPC_REGISTER_ADDR
+              value: "order.gorder.svc.cluster.local:5002"
+            - name: MONGO_HOST
+              value: order-mongo
+          ports:
+            - name: http
+              containerPort: 9090
+            - name: grpc
+              containerPort: 5002
+          volumeMounts:
+            - name: config
+              mountPath: /app/config/global.yaml
+              subPath: global.yaml
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { memory: "128Mi", cpu: "100m" }
+            limits:   { memory: "512Mi", cpu: "1000m" }
+      volumes:
+        - name: config
+          configMap:
+            name: gorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order
+  namespace: gorder
+spec:
+  type: NodePort
+  selector:
+    app: order
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090
+    - name: grpc
+      port: 5002
+      targetPort: 5002

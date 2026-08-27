@@ -1,0 +1,35 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: gorder
+
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # 把宿主机端口直通到 kind node 的 NodePort
+      # k6 和 curl 可以直接打 localhost
+      - containerPort: 30090   # order HTTP
+        hostPort: 9090
+        protocol: TCP
+      - containerPort: 30091   # stock admin HTTP (/metrics /health /ready)
+        hostPort: 9091
+        protocol: TCP
+      - containerPort: 30092   # payment HTTP
+        hostPort: 9092
+        protocol: TCP
+      - containerPort: 30094   # kitchen admin HTTP
+        hostPort: 9094
+        protocol: TCP
+      - containerPort: 30300   # Grafana
+        hostPort: 3000
+        protocol: TCP
+      - containerPort: 30093   # Prometheus
+        hostPort: 9093
+        protocol: TCP
+      - containerPort: 30500   # Consul UI
+        hostPort: 8500
+        protocol: TCP
+      - containerPort: 30168   # Jaeger UI
+        hostPort: 16686
+        protocol: TCP
+  - role: worker
+  - role: worker

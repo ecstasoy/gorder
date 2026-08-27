@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stock
+  namespace: gorder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stock
+  template:
+    metadata:
+      labels:
+        app: stock
+    spec:
+      containers:
+        - name: stock
+          image: gorder-stock:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CONFIG_DIR
+              value: /app/config
+            - name: CONSUL_ADDR
+              value: consul:8500
+            - name: JAEGER_URL
+              value: http://jaeger:14268/api/traces
+            - name: RABBITMQ_HOST
+              value: rabbit-mq
+            - name: REDIS_LOCAL_IP
+              value: redis
+            - name: LOG_LEVEL
+              value: info
+            # stock-specific
+            - name: STOCK_GRPC_ADDR
+              value: ":5003"
+            - name: STOCK_GRPC_REGISTER_ADDR
+              value: "stock.gorder.svc.cluster.local:5003"
+            - name: STOCK_HTTP_ADDR
+              value: "0.0.0.0:9091"
+            - name: MYSQL_HOST
+              value: mysql
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: STRIPE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: stripe
+                  key: STRIPE_KEY
+                  optional: true
+          ports:
+            - name: grpc
+              containerPort: 5003
+            - name: admin
+              containerPort: 9091
+          volumeMounts:
+            - name: config
+              mountPath: /app/config/global.yaml
+              subPath: global.yaml
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9091
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9091
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { memory: "64Mi", cpu: "50m" }
+            limits:   { memory: "256Mi", cpu: "500m" }
+      volumes:
+        - name: config
+          configMap:
+            name: gorder-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stock
+  namespace: gorder
+spec:
+  type: NodePort
+  selector:
+    app: stock
+  ports:
+    - name: grpc
+      port: 5003
+      targetPort: 5003
+    - name: admin
+      port: 9091
+      targetPort: 9091
+      nodePort: 30091
