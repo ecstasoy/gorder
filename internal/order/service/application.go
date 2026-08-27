@@ -26,7 +26,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
-func NewApplication(ctx context.Context) (app.Application, query.StockService, *goredis.Client, *outbox.MongoOutboxRepo, func()) {
+func NewApplication(ctx context.Context) (app.Application, query.StockService, *goredis.Client, *outbox.MongoOutboxRepo, *mongo.Client, func()) {
 	stockClient, err := grpcClient.NewStockGRPCClient(ctx)
 	if err != nil {
 		panic(err)
@@ -45,7 +45,7 @@ func NewApplication(ctx context.Context) (app.Application, query.StockService, *
 	if err != nil {
 		panic(fmt.Errorf("failed to create outbox repo: %w", err))
 	}
-	return newApplication(ctx, stockGRPC, redisClient, ch, mongoClient, outboxRepo), stockGRPC, redisClient, outboxRepo, func() {
+	return newApplication(ctx, stockGRPC, redisClient, ch, mongoClient, outboxRepo), stockGRPC, redisClient, outboxRepo, mongoClient, func() {
 		_ = grpcClient.CloseStockClient()
 		_ = closeCh()
 	}

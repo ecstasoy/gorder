@@ -6,6 +6,16 @@ order:
   server-to-run: http
   http-addr: 127.0.0.1:9090
   grpc-addr: 127.0.0.1:5002
+  reconcile:
+    # reservation 对账 worker 配置 —— ADR-0001 "后续工作 #5" 收口
+    # interval: 扫描间隔
+    # min-age: 订单进入终态多久后才视作"应该已对账完了"
+    # max-age: 扫描上限,超此年龄留给人工处理
+    # batch-limit: 每 tick 最多处理订单数
+    interval: 20s
+    min-age: 20s
+    max-age: 24h
+    batch-limit: 50
 
 stock:
   service-name: stock
