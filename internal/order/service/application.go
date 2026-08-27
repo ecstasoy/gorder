@@ -78,6 +78,7 @@ func newApplication(_ context.Context, stockGRPC query.StockService, redisClient
 			CancelOrder:      command.NewCancelOrderHandler(cancelSaga, logger, metricsClient),
 			ConfirmOrder:     command.NewConfirmOrderHandler(confirmSaga, logger, metricsClient),
 			CreateFlashOrder: command.NewCreateFlashOrderHandler(flashIntake, logger, metricsClient),
+			MarkRefunded:     command.NewMarkRefundedHandler(orderRepo, logger, metricsClient),
 		},
 		Queries: app.Queries{
 			GetCustomerOrder: query.NewGetCustomerOrderHandler(orderRepo, logrus.StandardLogger(), metricsClient),

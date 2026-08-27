@@ -17,6 +17,7 @@ type Commands struct {
 	SetPaymentLink   command.SetPaymentLinkHandler   // ADR-0002: typed transition,取代 UpdateOrder closure 模式
 	CancelOrder      command.CancelOrderHandler      // dispatch to cancel saga (ADR-0002)
 	ConfirmOrder     command.ConfirmOrderHandler     // dispatch to confirm saga (ADR-0002)
+	MarkRefunded     command.MarkRefundedHandler     // 2026-06: 处理 payment 转发的 Stripe charge.refunded
 }
 
 type Queries struct {

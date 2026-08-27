@@ -67,6 +67,7 @@ func Connect(user, pwd, host, port string) (*amqp.Connection, *amqp.Channel, fun
 		EventOrderCancelled, // ADR-0002: 接入 outbox
 		EventFlashSaleOrder,
 		EventOrderRefund,
+		EventOrderRefunded, // 2026-06: payment 转发 Stripe charge.refunded → order 消费
 	} {
 		if _, err := ch.QueueDeclare(q, true, false, false, false, nil); err != nil {
 			logrus.Fatal(fmt.Errorf("failed to declare queue %s: %w", q, err))

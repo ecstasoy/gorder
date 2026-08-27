@@ -18,6 +18,6 @@ func (m memoryProcessor) CreatePaymentLink(ctx context.Context, order *entity.Or
 	return "mem-payment-link", nil
 }
 
-func (m memoryProcessor) Refund(_ context.Context, _ string) error {
+func (m memoryProcessor) Refund(_ context.Context, _, _ string, _ map[string]string) error {
 	return nil
 }

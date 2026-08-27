@@ -42,6 +42,10 @@ const (
 
 	// timeout 是低频触发 (到 15min ttl 才触发),少量 worker 够了
 	paymentTimeoutWorkers = 5
+
+	// 2026-06 refund hardening: order.refunded 是 Stripe webhook 转发,
+	// 低频(只在用户付款 + 取消竞态时触发),少量 worker
+	orderRefundedWorkers = 5
 )
 
 func (c *Consumer) Listen(ch *amqp.Channel) {
@@ -74,8 +78,17 @@ func (c *Consumer) Listen(ch *amqp.Channel) {
 		logrus.Fatal(fmt.Errorf("failed to consume timeout message: %w", err))
 	}
 
-	logrus.Infof("Order consumer started: order.paid x %d workers, order.payment.timeout x %d workers",
-		orderPaidWorkers, paymentTimeoutWorkers)
+	refundedQ, err := ch.QueueDeclare(broker.EventOrderRefunded, true, false, false, false, nil)
+	if err != nil {
+		logrus.Fatal(fmt.Errorf("failed to declare order.refunded queue: %w", err))
+	}
+	refundedMsgs, err := ch.Consume(refundedQ.Name, "", false, false, false, false, nil)
+	if err != nil {
+		logrus.Fatal(fmt.Errorf("failed to consume order.refunded: %w", err))
+	}
+
+	logrus.Infof("Order consumer started: order.paid x %d workers, order.payment.timeout x %d workers, order.refunded x %d workers",
+		orderPaidWorkers, paymentTimeoutWorkers, orderRefundedWorkers)
 
 	// order.paid worker pool
 	for i := 0; i < orderPaidWorkers; i++ {
@@ -91,6 +104,15 @@ func (c *Consumer) Listen(ch *amqp.Channel) {
 		go func(workerID int) {
 			for msg := range timeoutMsgs {
 				c.handlePaymentTimeout(ch, msg, timeoutQ)
+			}
+		}(i)
+	}
+
+	// order.refunded worker pool — payment 转发 Stripe charge.refunded
+	for i := 0; i < orderRefundedWorkers; i++ {
+		go func(workerID int) {
+			for msg := range refundedMsgs {
+				c.handleOrderRefunded(ch, msg, refundedQ)
 			}
 		}(i)
 	}
@@ -133,28 +155,25 @@ func (c *Consumer) handleMessage(ch *amqp.Channel, msg amqp.Delivery, q amqp.Que
 		return
 	}
 
-	// ADR-0002: dispatch to ConfirmOrder saga,saga 内部完成 Mongo Tx { MarkPaid +
-	// outbox.Append(OrderPaidEvent) } + stockGRPC.Confirm(orderID)。
+	// dispatch to ConfirmOrder saga。saga 内部:
+	//   - 正常路径: Mongo Tx { MarkPaid } + stockGRPC.Confirm
+	//   - StatusConflict + Order=CANCELLED: 在**同一个 Mongo tx 内**写
+	//     refund 请求到 outbox。worker 异步推到 payment 服务消费触发 Stripe Refund。
+	//   PaymentIntentID 是 refund 路径必需; saga 内部用它构造 outbox payload。
 	_, err = c.app.Commands.ConfirmOrder.Handle(ctx, command.ConfirmOrder{
-		OrderID:    paid.ID,
-		CustomerID: paid.CustomerID,
+		OrderID:         paid.ID,
+		CustomerID:      paid.CustomerID,
+		PaymentIntentID: paid.PaymentIntentID,
 	})
 
 	if err != nil {
 		var conflictErr *domain.StatusConflictError
 		if stderrors.As(err, &conflictErr) {
-			// 状态冲突：订单已被取消但用户付款成功，发起退款
-			logging.Warnf(ctx, nil, "Status conflict for order %s, publishing refund event", paid.ID)
-			// ADR-0002 candidate 7: 通过 EventCatalog,routing 知识住在 broker 包,caller 不感知 direct/fanout。
-			refundErr := c.catalog.PublishOrderRefund(ctx, broker.OrderRefundPayload{
-				OrderID:         paid.ID,
-				CustomerID:      paid.CustomerID,
-				PaymentIntentID: paid.PaymentIntentID,
-			})
-			if refundErr != nil {
-				logging.Errorf(ctx, nil, "Failed to publish refund event for order %s: %v", paid.ID, refundErr)
-			}
-			// 冲突不重试，正常 ack
+			// saga 已在同一 Mongo tx 内把 refund record 写进 outbox。consumer 只需 ack。
+			// 与之前 (内联 catalog.PublishOrderRefund) 相比这条路径的关键好处是
+			// "决定要退款"和"发出退款指令"现在是原子的 —— RabbitMQ 在那一瞬间
+			// 不可达不会导致退款事件丢失。
+			logging.Warnf(ctx, nil, "Status conflict for order %s; refund queued to outbox by saga", paid.ID)
 			err = nil
 			return
 		}
@@ -197,4 +216,45 @@ func (c *Consumer) handlePaymentTimeout(ch *amqp.Channel, msg amqp.Delivery, q a
 	if err != nil {
 		logrus.WithContext(ctx).Errorf("failed to cancel order %s on timeout: %v", o.ID, err)
 	}
+}
+
+// handleOrderRefunded 消费 payment 服务从 Stripe charge.refunded webhook 转发来
+// 的 order.refunded 消息,把 RefundID + RefundedAt 写回 Mongo Order(不改 Status)。
+// Order.MarkRefunded() 是幂等的,Stripe 重发或 RabbitMQ retry 都安全。
+func (c *Consumer) handleOrderRefunded(ch *amqp.Channel, msg amqp.Delivery, q amqp.Queue) {
+	t := otel.Tracer("rabbitmq")
+	ctx, span := t.Start(
+		broker.ExtractRabbitMQHeaders(context.Background(), msg.Headers),
+		fmt.Sprintf("rabbitmq.%s.consume", q.Name))
+	defer span.End()
+
+	var err error
+	defer func() {
+		if err != nil {
+			logging.Warnf(ctx, nil, "Failed to consume order.refunded: %v", err)
+			if retryErr := broker.HandleRetry(ctx, ch, &msg); retryErr != nil {
+				logging.Errorf(ctx, nil, "Failed to handle retry for order.refunded: %v", retryErr)
+			}
+		} else {
+			_ = msg.Ack(false)
+		}
+	}()
+
+	payload := &broker.OrderRefundedPayload{}
+	if err = json.Unmarshal(msg.Body, payload); err != nil {
+		err = errors.Wrap(err, "unmarshal order.refunded")
+		return
+	}
+
+	_, err = c.app.Commands.MarkRefunded.Handle(ctx, command.MarkRefunded{
+		OrderID:    payload.OrderID,
+		CustomerID: payload.CustomerID,
+		RefundID:   payload.RefundID,
+		RefundedAt: payload.RefundedAt,
+	})
+	if err != nil {
+		logging.Errorf(ctx, nil, "MarkRefunded failed for order %s: %v", payload.OrderID, err)
+		return
+	}
+	span.AddEvent("order.refunded.persisted")
 }

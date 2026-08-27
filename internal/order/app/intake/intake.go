@@ -187,6 +187,33 @@ func eventsToOutboxRecords(events []domain.DomainEvent) ([]domainsvc.OutboxRecor
 				Kind:    domainsvc.OutboxKindQueue,
 				Payload: payload,
 			})
+		case domain.OrderRefundRequestedEvent:
+			// ConfirmOrder saga 在 StatusConflictError + Order=CANCELLED 时
+			// append。Payload 与 broker.OrderRefundPayload 字段对齐,payment
+			// 消费 order.refund queue 时直接 unmarshal。
+			refundEventID := uuid.NewString()
+			payload, err := json.Marshal(broker.OrderRefundPayload{
+				OrderID:         ev.Order.ID,
+				CustomerID:      ev.Order.CustomerID,
+				PaymentIntentID: ev.PaymentIntentID,
+				EventID:         refundEventID, // 用作 Stripe Idempotency-Key
+			})
+			if err != nil {
+				return nil, errors.Wrap(err, "marshal OrderRefundRequested")
+			}
+			records = append(records, domainsvc.OutboxRecord{
+				EventID: refundEventID,
+				Dest:    broker.EventOrderRefund,
+				Kind:    domainsvc.OutboxKindQueue,
+				Payload: payload,
+			})
+		case domain.OrderRefundedEvent:
+			// payment 服务转发 Stripe charge.refunded webhook → order.refunded queue
+			// → order 消费后 MarkRefunded → 这条事件 append。目前无下游订阅
+			// order.refunded.completed 类的事件;先不接 outbox,等下游需要时
+			// 加一行 case 即可。
+			_ = ev
+			continue
 		default:
 			return nil, errors.Errorf("intake: unknown event type %q", e.EventType())
 		}

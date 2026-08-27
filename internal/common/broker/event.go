@@ -82,6 +82,7 @@ const (
 	OrderPaymentDelayQueue   = "order.payment.delay"
 	OrderPaymentTimeoutDLX   = "order.payment.timeout.dlx"
 	EventOrderRefund         = "order.refund"
+	EventOrderRefunded       = "order.refunded"
 	EventFlashSaleOrder      = "flash.order.created"
 )
 
@@ -98,10 +99,24 @@ type OrderPaidEvent struct {
 }
 
 // OrderRefundPayload 是退款事件的消息体。
+//
+// EventID 是 outbox.Record.EventID 的副本,payment 服务消费时把它当成 Stripe
+// Idempotency-Key 传给 stripeRefund.New —— 即使 RabbitMQ 重投同一条消息或
+// HandleRetry 重发,Stripe 都会返回**同一个** Refund 对象,不会重复扣账户余额。
 type OrderRefundPayload struct {
 	OrderID         string `json:"OrderID"`
 	CustomerID      string `json:"CustomerID"`
 	PaymentIntentID string `json:"PaymentIntentID"`
+	EventID         string `json:"EventID"`
+}
+
+// OrderRefundedPayload 是 payment 服务转发 Stripe charge.refunded webhook 给
+// order 服务的消息体。order 消费后 MarkRefunded 把 refund_id 写回 Mongo。
+type OrderRefundedPayload struct {
+	OrderID    string `json:"OrderID"`
+	CustomerID string `json:"CustomerID"`
+	RefundID   string `json:"RefundID"`   // Stripe re_xxxxx
+	RefundedAt int64  `json:"RefundedAt"` // unix seconds
 }
 
 type FlashSaleOrderPayload struct {

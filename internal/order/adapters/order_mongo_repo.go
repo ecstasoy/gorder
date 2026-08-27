@@ -40,6 +40,9 @@ type orderModel struct {
 	Status      string             `bson:"status"`
 	PaymentLink string             `bson:"payment_link"`
 	Items       []*entity.Item     `bson:"items"`
+	// Refund 子状态 —— 见 domain.Order 注释。RefundID 非空 ⟺ 已退款。
+	RefundID   string `bson:"refund_id,omitempty"`
+	RefundedAt *int64 `bson:"refunded_at,omitempty"`
 	// ADR-0004 — flash sale 活动归属;常规订单为空字符串。
 	ActivityID string `bson:"activity_id,omitempty"`
 }
@@ -129,13 +132,23 @@ func (r *OrderRepositoryMongo) Update(ctx context.Context, o *domain.Order, upda
 		}
 		logrus.Infof("update || oldOrder=%+v || updated=%+v", oldOrder, updated)
 		mongoID, _ := primitive.ObjectIDFromHex(oldOrder.ID)
+		setFields := bson.M{
+			"status":       updated.Status.String(), // orderpb.OrderStatus → string
+			"payment_link": updated.PaymentLink,
+		}
+		// Refund 字段仅在 caller 真的 set 过时才写 —— 否则会清掉之前的值。
+		// MarkRefunded 内部已经做了幂等 (已 RefundID 非空时静默跳过 set),所以
+		// 这里只要见到非空就 persist。
+		if updated.RefundID != "" {
+			setFields["refund_id"] = updated.RefundID
+		}
+		if updated.RefundedAt != nil {
+			setFields["refunded_at"] = *updated.RefundedAt
+		}
 		_, err = r.collection().UpdateOne(
 			sCtx,
 			bson.M{"_id": mongoID, "customer_id": oldOrder.CustomerID},
-			bson.M{"$set": bson.M{
-				"status":       updated.Status.String(), // orderpb.OrderStatus → string
-				"payment_link": updated.PaymentLink,
-			}},
+			bson.M{"$set": setFields},
 		)
 		return nil, err
 	})
@@ -151,6 +164,8 @@ func (r *OrderRepositoryMongo) marshalToModel(order *domain.Order) *orderModel {
 		Status:      order.Status.String(),
 		PaymentLink: order.PaymentLink,
 		Items:       order.Items,
+		RefundID:    order.RefundID,
+		RefundedAt:  order.RefundedAt,
 		ActivityID:  order.ActivityID,
 	}
 }
@@ -167,6 +182,8 @@ func (r *OrderRepositoryMongo) unmarshal(m *orderModel) *domain.Order {
 		Status:      status,
 		PaymentLink: m.PaymentLink,
 		Items:       m.Items,
+		RefundID:    m.RefundID,
+		RefundedAt:  m.RefundedAt,
 		ActivityID:  m.ActivityID,
 	}
 }
