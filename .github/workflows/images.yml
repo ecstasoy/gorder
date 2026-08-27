@@ -1,0 +1,73 @@
+name: images
+
+on:
+  pull_request:
+    branches: [main]
+    # PR 上只构建不推送 —— 目的是在合并前抓住 Dockerfile / 依赖层的破坏，
+    # 而不是产出可用的镜像。
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: images-${{ github.workflow }}-${{ github.ref }}
+  # main / tag 上的推送不取消：半路取消可能留下只推了一半的 manifest list。
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: image · ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [order, stock, payment, kitchen]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # PR 不需要登录（也没有 packages:write 之外的权限问题），但多写一个
+      # 条件比多一条失败路径便宜。
+      - name: log in to ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: SERVICE=${{ matrix.service }}
+          # PR 上只出 amd64 省一半时间；真正推 registry 时才出双架构 ——
+          # EKS 节点可能是 amd64 也可能是 Graviton(arm64)，本地 kind 在 Apple
+          # Silicon 上是 arm64。Dockerfile 用 BUILDPLATFORM + GOARCH 交叉编译，
+          # 所以双架构几乎不额外花时间（没有 QEMU 模拟）。
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # 不生成 provenance/sbom attestation：它们会在 manifest list 里多出
+          # unknown/unknown 条目，kind load 和一些老工具会被绊到。
+          provenance: false

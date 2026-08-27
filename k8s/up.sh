@@ -3,9 +3,13 @@
 #
 # 前提:
 #   - kind cluster 已创建: kind create cluster --config k8s/kind-cluster.yaml
-#   - 4 个镜像已 load 到 kind: kind load docker-image gorder-{order,stock,payment,kitchen}:dev --name gorder
+#   - 4 个应用镜像已经在 kind 节点上。两种拿法:
+#       a) 本地构建:  docker compose build && \
+#                     kind load docker-image gorder-{order,stock,payment,kitchen}:dev --name gorder
+#       b) 拉 CI 产物: bash k8s/up.sh --from-ghcr [--image-tag main]
 #
 # 用法: bash k8s/up.sh [--stripe-key KEY] [--endpoint-secret SECRET]
+#                      [--from-ghcr] [--image-tag TAG] [--cluster NAME]
 # 也可以提前 export STRIPE_KEY 和 ENDPOINT_STRIPE_SECRET
 
 set -euo pipefail
@@ -15,6 +19,26 @@ NS=gorder
 
 STRIPE_KEY=${STRIPE_KEY:-}
 ENDPOINT_STRIPE_SECRET=${ENDPOINT_STRIPE_SECRET:-}
+
+# 镜像来源。manifests 里写死的是 gorder-<svc>:dev + imagePullPolicy: IfNotPresent，
+# 所以从 GHCR 拉下来之后要 retag 成同名，再 kind load 进节点 —— manifests 不用动，
+# 集群也不需要 imagePullSecret（GHCR 上是私有包）。
+FROM_GHCR=false
+IMAGE_TAG=${IMAGE_TAG:-main}
+GHCR_REPO=${GHCR_REPO:-ghcr.io/ecstasoy/gorder}
+KIND_CLUSTER=${KIND_CLUSTER:-gorder}
+APPS=(order stock payment kitchen)
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --stripe-key)      STRIPE_KEY="$2"; shift 2 ;;
+    --endpoint-secret) ENDPOINT_STRIPE_SECRET="$2"; shift 2 ;;
+    --from-ghcr)       FROM_GHCR=true; shift ;;
+    --image-tag)       IMAGE_TAG="$2"; shift 2 ;;
+    --cluster)         KIND_CLUSTER="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
 
 # 从 .env 读,如果未设
 if [[ -z "$STRIPE_KEY" && -f "$ROOT/.env" ]]; then
@@ -26,6 +50,19 @@ GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log()  { echo -e "${CYAN}[up]${NC} $*"; }
 ok()   { echo -e "${GREEN}  ✓${NC} $*"; }
 warn() { echo -e "${YELLOW}  !${NC} $*"; }
+
+# ---------------- 镜像 (可选: 从 GHCR 拉) ----------------
+if [[ "$FROM_GHCR" == true ]]; then
+  log "Pulling images from ${GHCR_REPO}-* :${IMAGE_TAG} ..."
+  for svc in "${APPS[@]}"; do
+    remote="${GHCR_REPO}-${svc}:${IMAGE_TAG}"
+    local_tag="gorder-${svc}:dev"
+    docker pull -q "$remote" >/dev/null
+    docker tag "$remote" "$local_tag"
+    kind load docker-image "$local_tag" --name "$KIND_CLUSTER" >/dev/null
+    ok "$remote → $local_tag → kind/$KIND_CLUSTER"
+  done
+fi
 
 # ---------------- namespace ----------------
 log "Applying namespace..."
