@@ -118,6 +118,46 @@ func (h *PaymentHandler) HandleWebHook(c *gin.Context) {
 			}
 			publishSpan.AddEvent("message.published")
 		}
+	case stripe.EventTypeChargeRefunded:
+		// Stripe 退款完成 (synchronous card refund 立即到这里;async 退款由后续 update 触发)。
+		// payload 是 Charge 对象, Charge.Refunds.Data[] 列出该 charge 下所有 Refund。
+		// 我们 set 过 Metadata = {orderID, customerID},直接读回不需要反向 GET PI。
+		var charge stripe.Charge
+		if err := json.Unmarshal(event.Data.Raw, &charge); err != nil {
+			err = errors.Wrap(err, "error unmarshalling charge data")
+			c.JSON(http.StatusBadRequest, err.Error())
+			return
+		}
+		if charge.Refunds == nil || len(charge.Refunds.Data) == 0 {
+			logrus.WithContext(c.Request.Context()).Warnf("charge.refunded for charge %s but no refunds in payload", charge.ID)
+			break
+		}
+		ctx := c.Request.Context()
+		for _, refund := range charge.Refunds.Data {
+			orderID := refund.Metadata["orderID"]
+			customerID := refund.Metadata["customerID"]
+			if orderID == "" {
+				// 历史 refund (没经过本服务的 RefundPayment 路径,e.g. Stripe 后台手动退) — 跳过。
+				logrus.WithContext(ctx).Warnf("charge.refunded refund %s missing orderID metadata; skipping order-side write-back", refund.ID)
+				continue
+			}
+			// order.refunded direct queue,Publisher.Publish。失败返 5xx 让 Stripe 重试 webhook
+			// (Stripe 内部 webhook 重试 + Order 侧 MarkRefunded 幂等 = 不会重复写)。
+			if pubErr := h.publisher.Publish(ctx, broker.DomainEvent{
+				Dest: broker.EventOrderRefunded,
+				Data: broker.OrderRefundedPayload{
+					OrderID:    orderID,
+					CustomerID: customerID,
+					RefundID:   refund.ID,
+					RefundedAt: refund.Created,
+				},
+			}); pubErr != nil {
+				logrus.WithContext(ctx).Errorf("publish order.refunded failed for refund %s: %v", refund.ID, pubErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "publish failed, please retry"})
+				return
+			}
+			logrus.WithContext(ctx).Infof("published order.refunded for order %s (refund %s)", orderID, refund.ID)
+		}
 	default:
 		logrus.WithContext(c.Request.Context()).Infof("Unhandled event type: %s", event.Type)
 	}

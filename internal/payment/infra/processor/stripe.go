@@ -76,12 +76,24 @@ func (s StripeProcessor) CreatePaymentLink(ctx context.Context, order *entity.Or
 	return result.URL, nil
 }
 
-func (s StripeProcessor) Refund(ctx context.Context, paymentIntentID string) error {
+func (s StripeProcessor) Refund(ctx context.Context, paymentIntentID, idempotencyKey string, metadata map[string]string) error {
 	_, span := tracing.Start(ctx, "stripe_processor.refund")
 	defer span.End()
 
-	_, err := stripRefund.New(&stripe.RefundParams{
+	params := &stripe.RefundParams{
 		PaymentIntent: stripe.String(paymentIntentID),
-	})
+	}
+	// Metadata: orderID/customerID。charge.refunded webhook 收到时通过
+	// Refund.Metadata 读回,避免反向 GET PaymentIntent。
+	for k, v := range metadata {
+		params.AddMetadata(k, v)
+	}
+	// Idempotency-Key 防止 RabbitMQ retry / HandleRetry 重发导致多次 Stripe 扣账。
+	// 同 key 重复请求 Stripe 返回缓存的 Refund 对象,网络层即去重。
+	if idempotencyKey != "" {
+		params.SetIdempotencyKey(idempotencyKey)
+	}
+
+	_, err := stripRefund.New(params)
 	return err
 }

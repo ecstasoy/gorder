@@ -34,3 +34,34 @@ type OrderPaidEvent struct {
 }
 
 func (e OrderPaidEvent) EventType() string { return "OrderPaid" }
+
+// OrderRefundRequestedEvent 表示一个 CANCELLED Order 需要退款 —— 典型场景是
+// 支付超时取消后 Stripe webhook 才到达 (29:59 付款, 30:00 超时)。ConfirmOrder
+// saga 在 Mongo tx 内检测到 status 冲突 (CANCELLED → PAID 非法) 时 append 此
+// 事件,outbox.Worker 异步 publish 到 order.refund queue,payment 消费触发
+// Stripe Refund。
+//
+// 引入这条事件的目的是把"决定要退款"和"发出退款指令"做原子化 —— 之前
+// (ADR-0002 之前) 是 consumer 内联 publish,如果 RabbitMQ 临时不可达,事件丢,
+// 用户钱被扣但 gorder 不会退,直接金额损失。
+type OrderRefundRequestedEvent struct {
+	Order           *Order
+	PaymentIntentID string // 来自 order.paid 消息体,Stripe Refund 必需
+}
+
+func (e OrderRefundRequestedEvent) EventType() string { return "OrderRefundRequested" }
+
+// OrderRefundedEvent 表示 Stripe 已经完成退款 —— 由 payment 服务消费 Stripe
+// charge.refunded webhook 后通过 order.refunded queue 通知 order 服务。order
+// 消费此事件后 Mongo Tx { o.MarkRefunded(refundID) },把 refund 时间戳 + Stripe
+// refund_id 写回 Order。
+//
+// 注意:这条事件不改 Order.Status (依然是 CANCELLED),只填充 RefundID / RefundedAt
+// 两个字段。"已 cancelled + 已 refunded" 是 CANCELLED 的一个子状态,业务上由
+// RefundID 是否非空区分,无需新增 Status enum。
+type OrderRefundedEvent struct {
+	Order    *Order
+	RefundID string // Stripe 返回的 re_xxxxx
+}
+
+func (e OrderRefundedEvent) EventType() string { return "OrderRefunded" }

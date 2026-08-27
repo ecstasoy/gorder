@@ -129,6 +129,7 @@ func (c *Consumer) handleRefund(ch *amqp.Channel, msg amqp.Delivery, q amqp.Queu
 		OrderID:         payload.OrderID,
 		CustomerID:      payload.CustomerID,
 		PaymentIntentID: payload.PaymentIntentID,
+		EventID:         payload.EventID,
 	})
 	if err != nil {
 		logging.Errorf(ctx, nil, "Failed to refund order %s: %v", payload.OrderID, err)
