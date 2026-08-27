@@ -107,6 +107,7 @@ type OrderRefundPayload struct {
 type FlashSaleOrderPayload struct {
 	Token      string          `json:"token"`
 	CustomerID string          `json:"customer_id"`
+	ActivityID string          `json:"activity_id,omitempty"` // ADR-0004,旧消息向后兼容时可空
 	Items      []FlashSaleItem `json:"items"`
 }
 

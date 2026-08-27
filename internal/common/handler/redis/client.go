@@ -195,23 +195,72 @@ func FlashSaleReserve(
 	return FlashReserveResult(codeInt), remainInt, nil
 }
 
+// luaFlashSaleRollback 把秒杀的 Lua 原子 reserve 撤回 —— INCRBY 还库存 + DEL once key。
+//
+// 关键边界:**TTL 已过期(活动结束)时,stock key 可能已被 Redis 自动清掉**。
+// 此时 INCRBY 会**新建一个没有 TTL 的 key**——长期漏水。
+// 修法:用 EXISTS 判断,key 不存在时跳过 INCRBY(活动已结束,补偿那个名额没意义)。
+// once key 总是 DEL —— 即使活动结束,也让该 customer 可以参与下一场。
+//
+// 返回值:
+//   1 → INCRBY 实际执行了(stock key 存在)
+//   0 → 跳过了 INCRBY(stock key 不存在,活动已结束)
 var luaFlashSaleRollback = redis.NewScript(`
-  redis.call("INCRBY", KEYS[1], ARGV[1])
+  local exists = redis.call("EXISTS", KEYS[1])
+  if exists == 1 then
+    redis.call("INCRBY", KEYS[1], ARGV[1])
+  end
   redis.call("DEL", KEYS[2])
-  return 1
+  return exists
   `)
 
+// FlashRollbackResult 表示一次 rollback 的实际效果。
+type FlashRollbackResult int
+
+const (
+	FlashRollbackApplied FlashRollbackResult = 1 // 库存还回 + once 删
+	FlashRollbackSkipped FlashRollbackResult = 0 // stock key 已过期,只删 once
+)
+
+// rollbackRetryAttempts 是 transient Redis 故障的本地重试次数。
+// 超过这个数仍失败 → caller 必须从 metric / 日志察觉,人工对账。
+const rollbackRetryAttempts = 3
+
+// FlashSaleRollback 调用 luaFlashSaleRollback 并对 transient Redis 错误做指数退避重试。
+// 持续失败时返回最后一次的 error,caller 应当 emit metric / 日志。
+//
+// 注意:Lua 本身原子;重试只针对**网络层 transient 失败**(超时 / 连接错),
+// 同一组 (stockKey, onceKey, quantity) 多次执行**不安全**——会重复 INCRBY。
+// 所以重试**仅在 Lua 返回 RedisError 时触发**,语义错误(脚本本身报错)不重试。
 func FlashSaleRollback(
 	ctx context.Context,
 	client *redis.Client,
 	stockKey, onceKey string,
 	quantity int64,
-) error {
+) (FlashRollbackResult, error) {
 	if client == nil {
-		return errors.New("redis client is nil")
+		return 0, errors.New("redis client is nil")
 	}
-	_, err := luaFlashSaleRollback.Run(ctx, client,
-		[]string{stockKey, onceKey}, quantity,
-	).Result()
-	return err
+	var lastErr error
+	for attempt := 0; attempt < rollbackRetryAttempts; attempt++ {
+		raw, err := luaFlashSaleRollback.Run(ctx, client,
+			[]string{stockKey, onceKey}, quantity,
+		).Result()
+		if err == nil {
+			code, _ := raw.(int64)
+			return FlashRollbackResult(code), nil
+		}
+		lastErr = err
+		// 指数退避:50ms / 100ms / 200ms。最长总等 350ms,不超过 HTTP / consumer 超时预算。
+		if ctx.Err() != nil {
+			return 0, ctx.Err()
+		}
+		backoff := time.Duration(50*(1<<attempt)) * time.Millisecond
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
+	return 0, lastErr
 }

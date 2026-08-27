@@ -40,6 +40,8 @@ type orderModel struct {
 	Status      string             `bson:"status"`
 	PaymentLink string             `bson:"payment_link"`
 	Items       []*entity.Item     `bson:"items"`
+	// ADR-0004 — flash sale 活动归属;常规订单为空字符串。
+	ActivityID string `bson:"activity_id,omitempty"`
 }
 
 func (r *OrderRepositoryMongo) Create(ctx context.Context, order *domain.Order) (created *domain.Order, err error) {
@@ -149,6 +151,7 @@ func (r *OrderRepositoryMongo) marshalToModel(order *domain.Order) *orderModel {
 		Status:      order.Status.String(),
 		PaymentLink: order.PaymentLink,
 		Items:       order.Items,
+		ActivityID:  order.ActivityID,
 	}
 }
 
@@ -164,5 +167,6 @@ func (r *OrderRepositoryMongo) unmarshal(m *orderModel) *domain.Order {
 		Status:      status,
 		PaymentLink: m.PaymentLink,
 		Items:       m.Items,
+		ActivityID:  m.ActivityID,
 	}
 }

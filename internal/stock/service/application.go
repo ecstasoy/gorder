@@ -18,6 +18,7 @@ func NewApplication(_ context.Context) (app.Application, func()) {
 	db := persistent.NewMySQL()
 	stockRepo := adapters.NewMySQLStockRepository(db)
 	reservationRepo := adapters.NewMySQLReservationRepository(db)
+	activityRepo := adapters.NewMySQLActivityRepository(db)
 	stripeAPI := integration.NewStripeAPI()
 	metricsClient := metrics.NewPrometheusMetricsClient()
 	redis.Init()
@@ -30,9 +31,12 @@ func NewApplication(_ context.Context) (app.Application, func()) {
 			ReserveStock:     command.NewReserveStockHandler(reservationRepo, logger, metricsClient),
 			ConfirmStock:     command.NewConfirmStockHandler(reservationRepo, logger, metricsClient),
 			ReleaseStock:     command.NewReleaseStockHandler(reservationRepo, logger, metricsClient),
+			CreateActivity:   command.NewCreateActivityHandler(activityRepo, logger, metricsClient),
+			WarmUpActivity:   command.NewWarmUpActivityHandler(activityRepo, stockRepo, stripeAPI, redisClient, logger, metricsClient),
 		},
 		Queries: app.Queries{
-			GetItems: query.NewGetItemsHandler(stripeAPI, logger, metricsClient),
+			GetItems:    query.NewGetItemsHandler(stripeAPI, logger, metricsClient),
+			GetActivity: query.NewGetActivityHandler(activityRepo, logger, metricsClient),
 		},
 	}
 

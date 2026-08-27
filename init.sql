@@ -40,3 +40,24 @@ CREATE TABLE `o_stock_reservation` (
     UNIQUE KEY  uk_order_product (order_id, product_id),
     KEY         idx_status_updated (status, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ADR-0004 Flash Sale Activity:把 "活动" 从隐式(Redis TTL)升级为一级 entity。
+-- 同一 SKU 可以承载多场活动(早场 / 晚场 / A/B 测试),通过 activity_id 区分。
+-- Order 上记录 activity_id,审计 / 退款 / 报表都可以按活动维度拉取。
+-- 状态机:draft → scheduled → active → ended / cancelled
+DROP TABLE IF EXISTS `flash_activities`;
+
+CREATE TABLE `flash_activities` (
+    id            VARCHAR(64)  PRIMARY KEY COMMENT 'uuid',
+    name          VARCHAR(255) NOT NULL,
+    product_id    VARCHAR(255) NOT NULL COMMENT '对应 o_stock.product_id',
+    total_stock   INT UNSIGNED NOT NULL,
+    start_time    TIMESTAMP    NOT NULL,
+    end_time      TIMESTAMP    NOT NULL,
+    status        ENUM('draft','scheduled','active','ended','cancelled') NOT NULL DEFAULT 'draft',
+    warmup_done   BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_product_status (product_id, status),
+    KEY idx_status_start (status, start_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

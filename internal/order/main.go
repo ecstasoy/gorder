@@ -108,9 +108,13 @@ func main() {
 			stockGRPC: stockGRPC,
 			publisher: publisher,
 		}
-		router.POST("/flash-sale/warmup", flashServer.PostFlashSaleWarmup)
+		router.POST("/flash-sale/warmup", flashServer.PostFlashSaleWarmup) // Deprecated (ADR-0004)
 		router.POST("/flash-sale/orders", flashServer.PostFlashSaleOrders)
 		router.GET("/flash-sale/result/:token", flashServer.GetFlashSaleResult)
+		// ADR-0004 activity-driven endpoints
+		router.POST("/flash-sale/activities", flashServer.PostCreateActivity)
+		router.POST("/flash-sale/activities/:activity_id/warmup", flashServer.PostWarmUpActivity)
+		router.POST("/flash-sale/activities/:activity_id/orders", flashServer.PostActivityFlashSaleOrder)
 	})
 	log.Printf("%v", viper.Get("order"))
 }

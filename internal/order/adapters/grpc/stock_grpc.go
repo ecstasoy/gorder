@@ -62,3 +62,61 @@ func (s StockGRPC) Release(ctx context.Context, orderID string) (err error) {
 	_, err = s.client.Release(ctx, &stockpb.ReleaseRequest{OrderID: orderID})
 	return err
 }
+
+// ---- ADR-0004 activity calls ----
+
+// ActivityInfo 是 order 侧需要的活动元数据子集。
+type ActivityInfo struct {
+	ActivityID string
+	Name       string
+	ProductID  string
+	TotalStock int32
+	Status     string
+	WarmupDone bool
+}
+
+func (s StockGRPC) CreateActivity(ctx context.Context, name, productID string, totalStock int32, startUnix, endUnix int64) (activityID string, err error) {
+	_, dLog := logging.WhenRequest(ctx, "StockGRPC.CreateActivity", map[string]any{"name": name, "product": productID})
+	defer dLog(nil, &err)
+
+	resp, err := s.client.CreateActivity(ctx, &stockpb.CreateActivityRequest{
+		Name:          name,
+		ProductID:     productID,
+		TotalStock:    totalStock,
+		StartTimeUnix: startUnix,
+		EndTimeUnix:   endUnix,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.ActivityID, nil
+}
+
+func (s StockGRPC) WarmUpActivity(ctx context.Context, activityID string) (skipped bool, err error) {
+	_, dLog := logging.WhenRequest(ctx, "StockGRPC.WarmUpActivity", map[string]any{"activity_id": activityID})
+	defer dLog(nil, &err)
+
+	resp, err := s.client.WarmUpActivity(ctx, &stockpb.WarmUpActivityRequest{ActivityID: activityID})
+	if err != nil {
+		return false, err
+	}
+	return resp.Skipped, nil
+}
+
+func (s StockGRPC) GetActivity(ctx context.Context, activityID string) (info *ActivityInfo, err error) {
+	_, dLog := logging.WhenRequest(ctx, "StockGRPC.GetActivity", map[string]any{"activity_id": activityID})
+	defer dLog(nil, &err)
+
+	resp, err := s.client.GetActivity(ctx, &stockpb.GetActivityRequest{ActivityID: activityID})
+	if err != nil {
+		return nil, err
+	}
+	return &ActivityInfo{
+		ActivityID: resp.ActivityID,
+		Name:       resp.Name,
+		ProductID:  resp.ProductID,
+		TotalStock: resp.TotalStock,
+		Status:     resp.Status,
+		WarmupDone: resp.WarmupDone,
+	}, nil
+}

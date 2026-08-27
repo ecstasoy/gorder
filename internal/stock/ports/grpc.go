@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/ecstasoy/gorder/common/convertor"
 	"github.com/ecstasoy/gorder/common/genproto/stockpb"
@@ -96,4 +97,59 @@ func (G GRPCServer) Release(ctx context.Context, request *stockpb.ReleaseRequest
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &stockpb.ReleaseResponse{}, nil
+}
+
+// ---- ADR-0004 Activity RPCs ----
+
+func (G GRPCServer) CreateActivity(ctx context.Context, request *stockpb.CreateActivityRequest) (*stockpb.CreateActivityResponse, error) {
+	_, span := tracing.Start(ctx, "grpc.CreateActivity")
+	defer span.End()
+
+	res, err := G.app.Commands.CreateActivity.Handle(ctx, command.CreateActivity{
+		Name:       request.Name,
+		ProductID:  request.ProductID,
+		TotalStock: request.TotalStock,
+		StartTime:  time.Unix(request.StartTimeUnix, 0).UTC(),
+		EndTime:    time.Unix(request.EndTimeUnix, 0).UTC(),
+	})
+	if err != nil {
+		logrus.Errorf("CreateActivity error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stockpb.CreateActivityResponse{ActivityID: res.ActivityID}, nil
+}
+
+func (G GRPCServer) WarmUpActivity(ctx context.Context, request *stockpb.WarmUpActivityRequest) (*stockpb.WarmUpActivityResponse, error) {
+	_, span := tracing.Start(ctx, "grpc.WarmUpActivity")
+	defer span.End()
+
+	res, err := G.app.Commands.WarmUpActivity.Handle(ctx, command.WarmUpActivity{
+		ActivityID: request.ActivityID,
+	})
+	if err != nil {
+		logrus.Errorf("WarmUpActivity error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stockpb.WarmUpActivityResponse{Skipped: res.Skipped}, nil
+}
+
+func (G GRPCServer) GetActivity(ctx context.Context, request *stockpb.GetActivityRequest) (*stockpb.GetActivityResponse, error) {
+	_, span := tracing.Start(ctx, "grpc.GetActivity")
+	defer span.End()
+
+	a, err := G.app.Queries.GetActivity.Handle(ctx, query.GetActivity{ActivityID: request.ActivityID})
+	if err != nil {
+		logrus.Errorf("GetActivity error: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &stockpb.GetActivityResponse{
+		ActivityID:    a.ID,
+		Name:          a.Name,
+		ProductID:     a.ProductID,
+		TotalStock:    a.TotalStock,
+		StartTimeUnix: a.StartTime.Unix(),
+		EndTimeUnix:   a.EndTime.Unix(),
+		Status:        string(a.Status),
+		WarmupDone:    a.WarmupDone,
+	}, nil
 }

@@ -20,6 +20,9 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	StockService_GetItems_FullMethodName         = "/stockpb.StockService/GetItems"
+	StockService_CreateActivity_FullMethodName   = "/stockpb.StockService/CreateActivity"
+	StockService_WarmUpActivity_FullMethodName   = "/stockpb.StockService/WarmUpActivity"
+	StockService_GetActivity_FullMethodName      = "/stockpb.StockService/GetActivity"
 	StockService_WarmUpFlashStock_FullMethodName = "/stockpb.StockService/WarmUpFlashStock"
 	StockService_Reserve_FullMethodName          = "/stockpb.StockService/Reserve"
 	StockService_Confirm_FullMethodName          = "/stockpb.StockService/Confirm"
@@ -31,6 +34,13 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type StockServiceClient interface {
 	GetItems(ctx context.Context, in *GetItemsRequest, opts ...grpc.CallOption) (*GetItemsResponse, error)
+	// ADR-0004 flash sale activity 一级 entity。WarmUpFlashStock 已 deprecated,
+	// 由 CreateActivity + WarmUpActivity 取代。Activity 持有时段 / 库存 / 状态机,
+	// Order 上记录 activity_id,审计 / 退款 / 报表都可按活动维度拉取。
+	CreateActivity(ctx context.Context, in *CreateActivityRequest, opts ...grpc.CallOption) (*CreateActivityResponse, error)
+	WarmUpActivity(ctx context.Context, in *WarmUpActivityRequest, opts ...grpc.CallOption) (*WarmUpActivityResponse, error)
+	GetActivity(ctx context.Context, in *GetActivityRequest, opts ...grpc.CallOption) (*GetActivityResponse, error)
+	// Deprecated: 用 CreateActivity + WarmUpActivity 替代。保留是为了向后兼容旧调用。
 	WarmUpFlashStock(ctx context.Context, in *WarmUpFlashStockRequest, opts ...grpc.CallOption) (*WarmUpFlashStockResponse, error)
 	// ADR-0001: Reserve / Confirm / Release lifecycle. Replaces the
 	// pre-ADR DeductStock + RestoreStock + CheckIfItemsInStock trio
@@ -52,6 +62,36 @@ func (c *stockServiceClient) GetItems(ctx context.Context, in *GetItemsRequest, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetItemsResponse)
 	err := c.cc.Invoke(ctx, StockService_GetItems_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) CreateActivity(ctx context.Context, in *CreateActivityRequest, opts ...grpc.CallOption) (*CreateActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateActivityResponse)
+	err := c.cc.Invoke(ctx, StockService_CreateActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) WarmUpActivity(ctx context.Context, in *WarmUpActivityRequest, opts ...grpc.CallOption) (*WarmUpActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WarmUpActivityResponse)
+	err := c.cc.Invoke(ctx, StockService_WarmUpActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stockServiceClient) GetActivity(ctx context.Context, in *GetActivityRequest, opts ...grpc.CallOption) (*GetActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActivityResponse)
+	err := c.cc.Invoke(ctx, StockService_GetActivity_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +143,13 @@ func (c *stockServiceClient) Release(ctx context.Context, in *ReleaseRequest, op
 // for forward compatibility.
 type StockServiceServer interface {
 	GetItems(context.Context, *GetItemsRequest) (*GetItemsResponse, error)
+	// ADR-0004 flash sale activity 一级 entity。WarmUpFlashStock 已 deprecated,
+	// 由 CreateActivity + WarmUpActivity 取代。Activity 持有时段 / 库存 / 状态机,
+	// Order 上记录 activity_id,审计 / 退款 / 报表都可按活动维度拉取。
+	CreateActivity(context.Context, *CreateActivityRequest) (*CreateActivityResponse, error)
+	WarmUpActivity(context.Context, *WarmUpActivityRequest) (*WarmUpActivityResponse, error)
+	GetActivity(context.Context, *GetActivityRequest) (*GetActivityResponse, error)
+	// Deprecated: 用 CreateActivity + WarmUpActivity 替代。保留是为了向后兼容旧调用。
 	WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error)
 	// ADR-0001: Reserve / Confirm / Release lifecycle. Replaces the
 	// pre-ADR DeductStock + RestoreStock + CheckIfItemsInStock trio
@@ -121,6 +168,15 @@ type UnimplementedStockServiceServer struct{}
 
 func (UnimplementedStockServiceServer) GetItems(context.Context, *GetItemsRequest) (*GetItemsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetItems not implemented")
+}
+func (UnimplementedStockServiceServer) CreateActivity(context.Context, *CreateActivityRequest) (*CreateActivityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateActivity not implemented")
+}
+func (UnimplementedStockServiceServer) WarmUpActivity(context.Context, *WarmUpActivityRequest) (*WarmUpActivityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WarmUpActivity not implemented")
+}
+func (UnimplementedStockServiceServer) GetActivity(context.Context, *GetActivityRequest) (*GetActivityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActivity not implemented")
 }
 func (UnimplementedStockServiceServer) WarmUpFlashStock(context.Context, *WarmUpFlashStockRequest) (*WarmUpFlashStockResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WarmUpFlashStock not implemented")
@@ -168,6 +224,60 @@ func _StockService_GetItems_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StockServiceServer).GetItems(ctx, req.(*GetItemsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_CreateActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).CreateActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_CreateActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).CreateActivity(ctx, req.(*CreateActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_WarmUpActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WarmUpActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).WarmUpActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_WarmUpActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).WarmUpActivity(ctx, req.(*WarmUpActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StockService_GetActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StockServiceServer).GetActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StockService_GetActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StockServiceServer).GetActivity(ctx, req.(*GetActivityRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -254,6 +364,18 @@ var StockService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetItems",
 			Handler:    _StockService_GetItems_Handler,
+		},
+		{
+			MethodName: "CreateActivity",
+			Handler:    _StockService_CreateActivity_Handler,
+		},
+		{
+			MethodName: "WarmUpActivity",
+			Handler:    _StockService_WarmUpActivity_Handler,
+		},
+		{
+			MethodName: "GetActivity",
+			Handler:    _StockService_GetActivity_Handler,
 		},
 		{
 			MethodName: "WarmUpFlashStock",
