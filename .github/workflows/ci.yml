@@ -109,9 +109,12 @@ jobs:
   # ---------------------------------------------------------------------------
   # 依赖方向：adapters → domain，绝不反向。CLAUDE.md 里写明由 go-cleanarch 守。
   #
-  # continue-on-error: stock 服务现有 3 处 app → infra 的违规
-  # (warmup_activity.go / warmup_flash_stock.go / get_items.go 都 import 了
-  # infra/integration)，修掉需要动 stock 的分层，单独一个 PR 做。
+  # continue-on-error: 现有 10 处违规，分三类 ——
+  #   6 处 adapters → infra/persistent (stock 的三个 mysql repo + 其 test)
+  #   3 处 app → infra/integration     (stock 的 warmup_activity / warmup_flash_stock / get_items)
+  #   1 处 app → adapters              (order/app/query/service.go 引了 adapters/grpc.ActivityInfo,
+  #                                     ADR-0004 那个 PR 引入的 —— app 层的接口不该出现 adapter 类型)
+  # 修它要动 stock 和 order 的分层，单独一个 PR 做。
   # 那个 PR 合了之后，删掉 continue-on-error 让它变成硬门禁。
   # ---------------------------------------------------------------------------
   arch:
@@ -127,7 +130,7 @@ jobs:
           cache-dependency-path: internal/*/go.sum
 
       - name: install go-cleanarch
-        run: go install github.com/roblaszczak/go-cleanarch@latest
+        run: go install github.com/roblaszczak/go-cleanarch@v1.2.1
 
       - run: go-cleanarch
 

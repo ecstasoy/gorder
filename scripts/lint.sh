@@ -27,7 +27,7 @@ function install_if_not_exist() {
   fi
 }
 
-install_if_not_exist go-cleanarch github.com/roblaszczak/go-cleanarch@latest
+install_if_not_exist go-cleanarch github.com/roblaszczak/go-cleanarch@v1.2.1
 
 NEED_INSTALL=true
 if command -v golangci-lint >/dev/null 2>&1; then
@@ -43,8 +43,9 @@ fi
 # ---------------------------------------------------------------------------
 # 分层依赖检查 (adapters → domain，绝不反向)
 # ---------------------------------------------------------------------------
-# TODO(debt): stock 服务目前有 3 处 app → infra 的违规 —— warmup_activity.go /
-#             warmup_flash_stock.go / get_items.go 都 import 了 infra/integration。
+# TODO(debt): 目前有 10 处违规 —— 6 处 adapters → infra/persistent，3 处
+#             app → infra/integration，1 处 app → adapters (order 的
+#             query/service.go 引了 adapters/grpc.ActivityInfo)。
 #             修掉之前先不阻断，但输出保留，别当没看见。
 # CI 把它拆成独立的 job 展示，所以那边设 SKIP_CLEANARCH=1 避免重复跑。
 if [ "${SKIP_CLEANARCH:-0}" != "1" ]; then
