@@ -11,7 +11,11 @@ genopenapi:
 
 .PHONY: fmt
 fmt:
-	goimports -l -w internal/
+	@find internal -name '*.go' ! -name '*.gen.go' ! -name '*.pb.go' -exec goimports -l -w {} +
+
+.PHONY: lint-new
+lint-new:
+	@NEW_FROM=origin/main ./scripts/lint.sh
 
 .PHONY: lint
 lint:

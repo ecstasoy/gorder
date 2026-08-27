@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# 同一个 PR 连续推送时，取消还在跑的旧 run。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 跟 internal/*/go.mod 的 `go 1.26` 保持一致。升 go.mod 时这里要一起动。
+  GO_VERSION: "1.26"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 每个服务是独立 Go module，必须分别构建。
+  # go vet 会连 *_test.go 一起类型检查，所以即使集成测试跑不起来（要活的基础
+  # 设施），测试代码编译不过也会在这里被抓住。
+  # ---------------------------------------------------------------------------
+  build:
+    name: build & vet · ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [common, kitchen, order, payment, stock]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: internal/${{ matrix.module }}/go.sum
+
+      - name: go build
+        working-directory: internal/${{ matrix.module }}
+        run: go build ./...
+
+      - name: go vet
+        working-directory: internal/${{ matrix.module }}
+        run: go vet ./...
+
+  # ---------------------------------------------------------------------------
+  # 目前只有 common 有不依赖基础设施的单测。
+  #   internal/stock/adapters/stock_mysql_repo_test.go  → 需要 MySQL
+  #   internal/order/tests/create_order_test.go         → 需要整套服务在跑
+  # 这两个留给第二步（service container / docker compose）。
+  # ---------------------------------------------------------------------------
+  test:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: internal/common/go.sum
+
+      - name: go test -race
+        working-directory: internal/common
+        run: go test -race ./...
+
+  # ---------------------------------------------------------------------------
+  # 仓库里有 35 个存量 lint 问题（unparam / unused / 命名 / 格式，都不是 bug）。
+  # 一次性修掉会把这个 PR 撑爆，所以这里只卡**新引入**的问题：
+  # --new-from-merge-base 让 golangci-lint 只报告相对 origin/main 的增量。
+  # 存量债务清完之后，把 scripts/lint.sh 的 NEW_FROM 去掉即可转为全量门禁。
+  # ---------------------------------------------------------------------------
+  lint:
+    name: lint (new issues only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # --new-from-merge-base 需要完整历史来算 merge base
+          fetch-depth: 0
+
+      # PR 上 checkout 落在 refs/pull/N/merge，fetch-depth: 0 通常已经带上
+      # origin/main，但显式再抓一次，避免 merge base 算不出来直接把 job 弄红。
+      - name: ensure origin/main is available
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: internal/*/go.sum
+
+      # golangci-lint 走 go install 现编（原因见 scripts/lint.sh 顶部注释），
+      # 编译一次约 1-2 分钟，所以按版本缓存二进制。
+      - name: cache lint tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: lint-tools-${{ runner.os }}-go${{ env.GO_VERSION }}-${{ hashFiles('scripts/lint.sh') }}
+
+      - name: golangci-lint
+        env:
+          SKIP_CLEANARCH: "1" # 由下面的 arch job 单独跑
+        run: make lint-new
+
+  # ---------------------------------------------------------------------------
+  # 依赖方向：adapters → domain，绝不反向。CLAUDE.md 里写明由 go-cleanarch 守。
+  #
+  # continue-on-error: 现有 10 处违规，分三类 ——
+  #   6 处 adapters → infra/persistent (stock 的三个 mysql repo + 其 test)
+  #   3 处 app → infra/integration     (stock 的 warmup_activity / warmup_flash_stock / get_items)
+  #   1 处 app → adapters              (order/app/query/service.go 引了 adapters/grpc.ActivityInfo,
+  #                                     ADR-0004 那个 PR 引入的 —— app 层的接口不该出现 adapter 类型)
+  # 修它要动 stock 和 order 的分层，单独一个 PR 做。
+  # 那个 PR 合了之后，删掉 continue-on-error 让它变成硬门禁。
+  # ---------------------------------------------------------------------------
+  arch:
+    name: clean architecture (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: internal/*/go.sum
+
+      - name: install go-cleanarch
+        run: go install github.com/roblaszczak/go-cleanarch@v1.2.1
+
+      - run: go-cleanarch
+
+  # ---------------------------------------------------------------------------
+  # 防止改了 .proto / openapi 却忘了 `make gen`。
+  #
+  # 生成物里带工具版本注释，所以插件版本必须钉死 —— 它们会真的影响生成的代码。
+  # protoc 自身的版本只出现在注释行里，用 git diff -I 忽略掉，免得 protoc 打个
+  # 补丁号就把 CI 搞红。
+  # ---------------------------------------------------------------------------
+  codegen:
+    name: codegen drift
+    runs-on: ubuntu-latest
+    env:
+      PROTOC_VERSION: "35.1"
+      PROTOC_GEN_GO_VERSION: "v1.36.11"
+      PROTOC_GEN_GO_GRPC_VERSION: "v1.6.0"
+      OAPI_CODEGEN_VERSION: "v2.6.0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: internal/*/go.sum
+
+      # 装到 /usr/local 是因为 scripts/genproto.sh 硬编码了 -I=/usr/local/include/
+      # 来找 well-known types。
+      - name: install protoc
+        run: |
+          curl -sSfLO "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -oq "protoc-${PROTOC_VERSION}-linux-x86_64.zip" -d /usr/local
+          rm "protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          protoc --version
+
+      - name: install codegen plugins
+        run: |
+          go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
+          go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
+          go install "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_CODEGEN_VERSION}"
+
+      - name: make gen
+        run: make gen
+
+      - name: 生成物必须与仓库一致
+        run: |
+          if ! git diff --exit-code -I'protoc[[:space:]]+v[0-9]'; then
+            echo "::error::生成代码与 .proto / openapi 定义不同步。本地跑 'make gen' 后提交。"
+            exit 1
+          fi
