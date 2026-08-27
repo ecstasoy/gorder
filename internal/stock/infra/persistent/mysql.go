@@ -41,6 +41,10 @@ func NewMySQLWithDB(db *gorm.DB) *MySQL {
 	return &MySQL{db: db}
 }
 
+// GetDB 暴露底层 gorm.DB 给跨表 / 单表简单 CRUD 用 (ADR-0004 activity repo)。
+// 复杂多表事务仍走 StartTransaction。
+func (d *MySQL) GetDB() *gorm.DB { return d.db }
+
 type StockModel struct {
 	ID        int64     `gorm:"column:id"`
 	ProductID string    `gorm:"column:product_id"`

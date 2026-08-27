@@ -126,14 +126,33 @@ func (c *Consumer) handleFlashSaleOrder(ch *amqp.Channel, msg amqp.Delivery, q a
 	_ = c.redisClient.Set(ctx, resultKey, string(b), flashResultTTL)
 }
 
+// compensateRedis 在 CreateFlashOrder saga 失败时把 Redis 入口闸的扣减撤回。
+// 统一调 redis.FlashSaleRollback(Lua 原子) — 和 HTTP 路径走同一段代码。
+//
+// Key 构造按 ADR-0004:
+//   - 新消息 (ActivityID 非空):flash:stock:activity_{id}:{product_id} 带 hash tag
+//   - 旧消息 (ActivityID 空):退化到无 activity 前缀的旧 key 格式,向后兼容
 func (c *Consumer) compensateRedis(ctx context.Context, payload *broker.FlashSaleOrderPayload) {
 	for _, item := range payload.Items {
-		if err := c.redisClient.IncrBy(ctx, flashStockKeyPrefix+item.ItemID, int64(item.Quantity)).Err(); err != nil {
-			logging.Warnf(ctx, nil, "compensate flash:stock for %s failed: %v", item.ItemID, err)
+		var stockKey, onceKey string
+		if payload.ActivityID != "" {
+			stockKey = fmt.Sprintf("flash:stock:activity_%s:{%s}", payload.ActivityID, item.ItemID)
+			onceKey = fmt.Sprintf("flash:once:activity_%s:%s:{%s}", payload.ActivityID, payload.CustomerID, item.ItemID)
+		} else {
+			stockKey = flashStockKeyPrefix + item.ItemID
+			onceKey = fmt.Sprintf("%s%s:%s", flashOnceKeyPrefix, payload.CustomerID, item.ItemID)
 		}
-		onceKey := fmt.Sprintf("%s%s:%s", flashOnceKeyPrefix, payload.CustomerID, item.ItemID)
-		if err := redis.Del(ctx, c.redisClient, onceKey); err != nil {
-			logging.Warnf(ctx, nil, "compensate flash:once %s failed: %v", onceKey, err)
+		result, err := redis.FlashSaleRollback(ctx, c.redisClient, stockKey, onceKey, int64(item.Quantity))
+		if err != nil {
+			logging.Errorf(ctx, nil, "flash rollback exhausted retries stock=%s once=%s: %v", stockKey, onceKey, err)
+			metrics.FlashRollbackTotal.WithLabelValues("error").Inc()
+			continue
+		}
+		if result == redis.FlashRollbackSkipped {
+			logging.Warnf(ctx, nil, "flash rollback skipped (stock key expired) for %s", stockKey)
+			metrics.FlashRollbackTotal.WithLabelValues("skipped").Inc()
+		} else {
+			metrics.FlashRollbackTotal.WithLabelValues("applied").Inc()
 		}
 	}
 }

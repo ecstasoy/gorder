@@ -149,6 +149,31 @@ type flashOrderResponse struct {
 	Token string `json:"token"`
 }
 
+// ---- ADR-0004 activity-driven API ----
+
+type createActivityRequest struct {
+	Name          string `json:"name"`
+	ProductID     string `json:"product_id"`
+	TotalStock    int32  `json:"total_stock"`
+	StartTimeUnix int64  `json:"start_time_unix"`
+	EndTimeUnix   int64  `json:"end_time_unix"`
+}
+
+type createActivityResponse struct {
+	ActivityID string `json:"activity_id"`
+}
+
+type warmupActivityResponse struct {
+	Skipped bool `json:"skipped"`
+}
+
+type activityFlashOrderRequest struct {
+	CustomerID string `json:"customer_id"`
+	ActivityID string `json:"activity_id"`
+	Quantity   int32  `json:"quantity"`
+}
+
+// Deprecated (ADR-0004): 用 PostCreateActivity + PostWarmUpActivity。
 func (h FlashSaleHTTPServer) PostFlashSaleWarmup(c *gin.Context) {
 	var req warmupRequest
 	var err error
@@ -173,6 +198,49 @@ func (h FlashSaleHTTPServer) PostFlashSaleWarmup(c *gin.Context) {
 	if err = h.stockGRPC.WarmUpFlashStock(c.Request.Context(), items, req.TTLSeconds); err != nil {
 		return
 	}
+}
+
+// PostCreateActivity 创建 flash sale 活动 (ADR-0004)。
+// 活动 draft → 后续 PostWarmUpActivity 才把 Redis 实例推到 active。
+func (h FlashSaleHTTPServer) PostCreateActivity(c *gin.Context) {
+	var req createActivityRequest
+	var err error
+	var resp createActivityResponse
+	defer func() { h.Response(c, err, resp) }()
+
+	if err = c.ShouldBindJSON(&req); err != nil {
+		err = hErrors.NewWithError(consts.ErrnoBindRequestError, err)
+		return
+	}
+	if req.Name == "" || req.ProductID == "" || req.TotalStock <= 0 || req.StartTimeUnix <= 0 || req.EndTimeUnix <= req.StartTimeUnix {
+		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "invalid activity payload")
+		return
+	}
+	id, gErr := h.stockGRPC.CreateActivity(c.Request.Context(), req.Name, req.ProductID, req.TotalStock, req.StartTimeUnix, req.EndTimeUnix)
+	if gErr != nil {
+		err = hErrors.NewWithError(consts.ErrnoUnknownError, gErr)
+		return
+	}
+	resp = createActivityResponse{ActivityID: id}
+}
+
+// PostWarmUpActivity 按 activity_id 把 Redis 推到 active。幂等。
+func (h FlashSaleHTTPServer) PostWarmUpActivity(c *gin.Context) {
+	activityID := c.Param("activity_id")
+	var err error
+	var resp warmupActivityResponse
+	defer func() { h.Response(c, err, resp) }()
+
+	if activityID == "" {
+		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "activity_id required")
+		return
+	}
+	skipped, gErr := h.stockGRPC.WarmUpActivity(c.Request.Context(), activityID)
+	if gErr != nil {
+		err = hErrors.NewWithError(consts.ErrnoUnknownError, gErr)
+		return
+	}
+	resp = warmupActivityResponse{Skipped: skipped}
 }
 
 func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
@@ -220,8 +288,18 @@ func (h FlashSaleHTTPServer) PostFlashSaleOrders(c *gin.Context) {
 
 	rollbackAll := func() {
 		for _, r := range reservedList {
-			if rbErr := redis.FlashSaleRollback(ctx, redisClient, r.stockKey, r.onceKey, r.qty); rbErr != nil {
-				logrus.WithContext(ctx).Warnf("flash rollback failed for %s: %v", r.stockKey, rbErr)
+			result, rbErr := redis.FlashSaleRollback(ctx, redisClient, r.stockKey, r.onceKey, r.qty)
+			if rbErr != nil {
+				// 3 次本地重试已耗尽。库存名额会泄漏到活动结束 —— emit 业务指标让运维感知。
+				logrus.WithContext(ctx).Errorf("flash rollback exhausted retries for stock=%s once=%s: %v", r.stockKey, r.onceKey, rbErr)
+				metrics.FlashRollbackTotal.WithLabelValues("error").Inc()
+				continue
+			}
+			if result == redis.FlashRollbackSkipped {
+				logrus.WithContext(ctx).Warnf("flash rollback skipped (stock key expired) for %s", r.stockKey)
+				metrics.FlashRollbackTotal.WithLabelValues("skipped").Inc()
+			} else {
+				metrics.FlashRollbackTotal.WithLabelValues("applied").Inc()
 			}
 		}
 	}
@@ -340,6 +418,122 @@ func packFlashSaleItems(items []flashSaleItem) []flashSaleItem {
 
 func flashOnceOrderKey(customerID, itemID string) string {
 	return flashOnceKeyPrefix + customerID + ":" + itemID
+}
+
+// ADR-0004 activity 维度的 key 构造,带 hash tag 锁定到 product_id —— 同 SKU 的
+// stock / once / meta 落 cluster 同 slot,不同 SKU 自然分散。
+func activityFlashStockKey(activityID, productID string) string {
+	return fmt.Sprintf("flash:stock:activity_%s:{%s}", activityID, productID)
+}
+func activityFlashOnceKey(activityID, customerID, productID string) string {
+	return fmt.Sprintf("flash:once:activity_%s:%s:{%s}", activityID, customerID, productID)
+}
+
+// PostActivityFlashSaleOrder 用 activity_id 下单 (ADR-0004 替代 PostFlashSaleOrders)。
+// 流程:GetActivity 拿 product_id + 校验 live → Lua 原子 reserve → MQ publish → 写 result pending。
+func (h FlashSaleHTTPServer) PostActivityFlashSaleOrder(c *gin.Context) {
+	var req activityFlashOrderRequest
+	var err error
+	var resp flashOrderResponse
+	outcome := "error"
+	start := time.Now()
+	defer func() {
+		metrics.FlashReserveTotal.WithLabelValues(outcome).Inc()
+		metrics.FlashReserveDuration.Observe(time.Since(start).Seconds())
+	}()
+	defer func() { h.Response(c, err, resp) }()
+
+	if err = c.ShouldBindJSON(&req); err != nil {
+		err = hErrors.NewWithError(consts.ErrnoBindRequestError, err)
+		return
+	}
+	if req.CustomerID == "" || req.ActivityID == "" || req.Quantity <= 0 {
+		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "customer_id, activity_id, quantity (>0) required")
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// Lookup activity for product_id + liveness check
+	info, gErr := h.stockGRPC.GetActivity(ctx, req.ActivityID)
+	if gErr != nil {
+		err = hErrors.NewWithError(consts.ErrnoUnknownError, gErr)
+		return
+	}
+	if info.Status != "active" {
+		outcome = "not_active"
+		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "activity %s is %s", req.ActivityID, info.Status)
+		return
+	}
+
+	redisClient := redis.LocalClient()
+	token := uuid.New().String()
+	fallbackTTL := int64(flashOnceFallbackTTL / time.Second)
+
+	stockKey := activityFlashStockKey(req.ActivityID, info.ProductID)
+	onceKey := activityFlashOnceKey(req.ActivityID, req.CustomerID, info.ProductID)
+
+	code, _, luaErr := redis.FlashSaleReserve(ctx, redisClient, stockKey, onceKey, token, int64(req.Quantity), fallbackTTL)
+	if luaErr != nil {
+		err = hErrors.NewWithError(consts.ErrnoUnknownError, luaErr)
+		return
+	}
+	switch code {
+	case redis.FlashReserveOK:
+		// fall through to publish
+	case redis.FlashReserveNotActive:
+		outcome = "not_active"
+		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "activity %s not live in redis", req.ActivityID)
+		return
+	case redis.FlashReserveDuplicate:
+		outcome = "duplicate"
+		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "customer %s already ordered activity %s", req.CustomerID, req.ActivityID)
+		return
+	case redis.FlashReserveInsufficient:
+		outcome = "insufficient"
+		err = hErrors.NewWithMsgf(consts.ErrnoRequestValidateError, "activity %s sold out", req.ActivityID)
+		return
+	default:
+		err = hErrors.NewWithMsgf(consts.ErrnoUnknownError, "unexpected flash reserve code %d", code)
+		return
+	}
+
+	// 失败时回滚单条 reservation
+	rollback := func() {
+		result, rbErr := redis.FlashSaleRollback(ctx, redisClient, stockKey, onceKey, int64(req.Quantity))
+		if rbErr != nil {
+			logrus.WithContext(ctx).Errorf("activity flash rollback exhausted: %v", rbErr)
+			metrics.FlashRollbackTotal.WithLabelValues("error").Inc()
+			return
+		}
+		if result == redis.FlashRollbackSkipped {
+			metrics.FlashRollbackTotal.WithLabelValues("skipped").Inc()
+		} else {
+			metrics.FlashRollbackTotal.WithLabelValues("applied").Inc()
+		}
+	}
+
+	mqItems := []broker.FlashSaleItem{{ItemID: info.ProductID, Quantity: req.Quantity}}
+	if pubErr := h.publisher.Publish(ctx, broker.DomainEvent{
+		Dest: broker.EventFlashSaleOrder,
+		Data: broker.FlashSaleOrderPayload{
+			Token:      token,
+			CustomerID: req.CustomerID,
+			ActivityID: req.ActivityID,
+			Items:      mqItems,
+		},
+	}); pubErr != nil {
+		rollback()
+		err = hErrors.NewWithError(consts.ErrnoUnknownError, pubErr)
+		return
+	}
+
+	_ = redisClient.Set(ctx, flashResultKeyPrefix+token,
+		mustMarshalFlashResult(flashResultPayload{Status: "pending"}),
+		flashResultPendingTTL)
+
+	resp = flashOrderResponse{Token: token}
+	outcome = "ok"
 }
 
 func mustMarshalFlashResult(payload flashResultPayload) string {

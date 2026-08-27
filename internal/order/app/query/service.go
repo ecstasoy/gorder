@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ecstasoy/gorder/common/genproto/orderpb"
+	stockGRPC "github.com/ecstasoy/gorder/order/adapters/grpc"
 )
 
 type StockService interface {
@@ -14,4 +15,10 @@ type StockService interface {
 	Reserve(ctx context.Context, orderID string, items []*orderpb.ItemWithQuantity) error
 	Confirm(ctx context.Context, orderID string) error
 	Release(ctx context.Context, orderID string) error
+
+	// ADR-0004 — activity entity。CreateActivity 创建 draft 活动,
+	// WarmUpActivity 推 Redis 到 active,GetActivity 查 product_id / 状态。
+	CreateActivity(ctx context.Context, name, productID string, totalStock int32, startUnix, endUnix int64) (string, error)
+	WarmUpActivity(ctx context.Context, activityID string) (bool, error)
+	GetActivity(ctx context.Context, activityID string) (*stockGRPC.ActivityInfo, error)
 }

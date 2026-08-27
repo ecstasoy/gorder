@@ -15,6 +15,10 @@ type Order struct {
 	PaymentLink string
 	Items       []*entity.Item
 
+	// ActivityID (ADR-0004) — 如果订单是 flash sale 活动产生的,记录活动 ID。
+	// 常规下单时为空字符串。用途:运营报表 / 按活动取消 / A/B 测试归属。
+	ActivityID string
+
 	// events 是 aggregate 在状态转移时记录的 domain event,不参与持久化也不
 	// 参与序列化 (unexported field — encoding/json + bson driver 都会跳过)。
 	// saga 用 PullEvents() 拿走后清空。

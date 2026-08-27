@@ -7,6 +7,15 @@ import "orderpb/order.proto";
 
 service StockService {
   rpc GetItems(GetItemsRequest) returns (GetItemsResponse);
+
+  // ADR-0004 flash sale activity 一级 entity。WarmUpFlashStock 已 deprecated,
+  // 由 CreateActivity + WarmUpActivity 取代。Activity 持有时段 / 库存 / 状态机,
+  // Order 上记录 activity_id,审计 / 退款 / 报表都可按活动维度拉取。
+  rpc CreateActivity(CreateActivityRequest) returns (CreateActivityResponse);
+  rpc WarmUpActivity(WarmUpActivityRequest) returns (WarmUpActivityResponse);
+  rpc GetActivity(GetActivityRequest) returns (GetActivityResponse);
+
+  // Deprecated: 用 CreateActivity + WarmUpActivity 替代。保留是为了向后兼容旧调用。
   rpc WarmUpFlashStock(WarmUpFlashStockRequest) returns (WarmUpFlashStockResponse);
 
   // ADR-0001: Reserve / Confirm / Release lifecycle. Replaces the
@@ -47,3 +56,41 @@ message ReleaseRequest {
   string OrderID = 1;
 }
 message ReleaseResponse {}
+
+// ---- ADR-0004 Activity entity ----
+
+message CreateActivityRequest {
+  string Name        = 1;
+  string ProductID   = 2;
+  int32  TotalStock  = 3;
+  int64  StartTimeUnix = 4; // unix seconds
+  int64  EndTimeUnix   = 5;
+}
+
+message CreateActivityResponse {
+  string ActivityID = 1;
+}
+
+message WarmUpActivityRequest {
+  string ActivityID = 1;
+}
+
+message WarmUpActivityResponse {
+  // Idempotent: 同 ID 多次调用都返回 success。Skipped=true 表示已经 warmup 过。
+  bool Skipped = 1;
+}
+
+message GetActivityRequest {
+  string ActivityID = 1;
+}
+
+message GetActivityResponse {
+  string ActivityID    = 1;
+  string Name          = 2;
+  string ProductID     = 3;
+  int32  TotalStock    = 4;
+  int64  StartTimeUnix = 5;
+  int64  EndTimeUnix   = 6;
+  string Status        = 7; // draft / scheduled / active / ended / cancelled
+  bool   WarmupDone    = 8;
+}

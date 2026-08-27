@@ -82,6 +82,20 @@ var (
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		},
 	)
+
+	// FlashRollbackTotal — outcomes of the Lua rollback path called by both
+	// HTTP rollbackAll (when publish fails) and consumer compensateRedis
+	// (when CreateFlashOrder fails). result = applied | skipped | error
+	//   applied — INCRBY ran, name returned to the pool
+	//   skipped — stock key TTL'd out (activity over), only once-key DEL'd
+	//   error   — retries exhausted; name leaked for current activity, manual reconcile needed
+	FlashRollbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gorder_flash_rollback_total",
+			Help: "Outcomes of Redis Lua compensation in flash sale path.",
+		},
+		[]string{"result"},
+	)
 )
 
 // ClassifyFlashOrderError maps a business error to a Prometheus label value.

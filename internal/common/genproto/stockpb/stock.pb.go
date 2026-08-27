@@ -446,6 +446,359 @@ func (*ReleaseResponse) Descriptor() ([]byte, []int) {
 	return file_stockpb_stock_proto_rawDescGZIP(), []int{9}
 }
 
+type CreateActivityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=Name,proto3" json:"Name,omitempty"`
+	ProductID     string                 `protobuf:"bytes,2,opt,name=ProductID,proto3" json:"ProductID,omitempty"`
+	TotalStock    int32                  `protobuf:"varint,3,opt,name=TotalStock,proto3" json:"TotalStock,omitempty"`
+	StartTimeUnix int64                  `protobuf:"varint,4,opt,name=StartTimeUnix,proto3" json:"StartTimeUnix,omitempty"` // unix seconds
+	EndTimeUnix   int64                  `protobuf:"varint,5,opt,name=EndTimeUnix,proto3" json:"EndTimeUnix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateActivityRequest) Reset() {
+	*x = CreateActivityRequest{}
+	mi := &file_stockpb_stock_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateActivityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateActivityRequest) ProtoMessage() {}
+
+func (x *CreateActivityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateActivityRequest.ProtoReflect.Descriptor instead.
+func (*CreateActivityRequest) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CreateActivityRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateActivityRequest) GetProductID() string {
+	if x != nil {
+		return x.ProductID
+	}
+	return ""
+}
+
+func (x *CreateActivityRequest) GetTotalStock() int32 {
+	if x != nil {
+		return x.TotalStock
+	}
+	return 0
+}
+
+func (x *CreateActivityRequest) GetStartTimeUnix() int64 {
+	if x != nil {
+		return x.StartTimeUnix
+	}
+	return 0
+}
+
+func (x *CreateActivityRequest) GetEndTimeUnix() int64 {
+	if x != nil {
+		return x.EndTimeUnix
+	}
+	return 0
+}
+
+type CreateActivityResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActivityID    string                 `protobuf:"bytes,1,opt,name=ActivityID,proto3" json:"ActivityID,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateActivityResponse) Reset() {
+	*x = CreateActivityResponse{}
+	mi := &file_stockpb_stock_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateActivityResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateActivityResponse) ProtoMessage() {}
+
+func (x *CreateActivityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateActivityResponse.ProtoReflect.Descriptor instead.
+func (*CreateActivityResponse) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CreateActivityResponse) GetActivityID() string {
+	if x != nil {
+		return x.ActivityID
+	}
+	return ""
+}
+
+type WarmUpActivityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActivityID    string                 `protobuf:"bytes,1,opt,name=ActivityID,proto3" json:"ActivityID,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WarmUpActivityRequest) Reset() {
+	*x = WarmUpActivityRequest{}
+	mi := &file_stockpb_stock_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WarmUpActivityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WarmUpActivityRequest) ProtoMessage() {}
+
+func (x *WarmUpActivityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WarmUpActivityRequest.ProtoReflect.Descriptor instead.
+func (*WarmUpActivityRequest) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *WarmUpActivityRequest) GetActivityID() string {
+	if x != nil {
+		return x.ActivityID
+	}
+	return ""
+}
+
+type WarmUpActivityResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Idempotent: 同 ID 多次调用都返回 success。Skipped=true 表示已经 warmup 过。
+	Skipped       bool `protobuf:"varint,1,opt,name=Skipped,proto3" json:"Skipped,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WarmUpActivityResponse) Reset() {
+	*x = WarmUpActivityResponse{}
+	mi := &file_stockpb_stock_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WarmUpActivityResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WarmUpActivityResponse) ProtoMessage() {}
+
+func (x *WarmUpActivityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WarmUpActivityResponse.ProtoReflect.Descriptor instead.
+func (*WarmUpActivityResponse) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *WarmUpActivityResponse) GetSkipped() bool {
+	if x != nil {
+		return x.Skipped
+	}
+	return false
+}
+
+type GetActivityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActivityID    string                 `protobuf:"bytes,1,opt,name=ActivityID,proto3" json:"ActivityID,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetActivityRequest) Reset() {
+	*x = GetActivityRequest{}
+	mi := &file_stockpb_stock_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetActivityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActivityRequest) ProtoMessage() {}
+
+func (x *GetActivityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActivityRequest.ProtoReflect.Descriptor instead.
+func (*GetActivityRequest) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetActivityRequest) GetActivityID() string {
+	if x != nil {
+		return x.ActivityID
+	}
+	return ""
+}
+
+type GetActivityResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActivityID    string                 `protobuf:"bytes,1,opt,name=ActivityID,proto3" json:"ActivityID,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=Name,proto3" json:"Name,omitempty"`
+	ProductID     string                 `protobuf:"bytes,3,opt,name=ProductID,proto3" json:"ProductID,omitempty"`
+	TotalStock    int32                  `protobuf:"varint,4,opt,name=TotalStock,proto3" json:"TotalStock,omitempty"`
+	StartTimeUnix int64                  `protobuf:"varint,5,opt,name=StartTimeUnix,proto3" json:"StartTimeUnix,omitempty"`
+	EndTimeUnix   int64                  `protobuf:"varint,6,opt,name=EndTimeUnix,proto3" json:"EndTimeUnix,omitempty"`
+	Status        string                 `protobuf:"bytes,7,opt,name=Status,proto3" json:"Status,omitempty"` // draft / scheduled / active / ended / cancelled
+	WarmupDone    bool                   `protobuf:"varint,8,opt,name=WarmupDone,proto3" json:"WarmupDone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetActivityResponse) Reset() {
+	*x = GetActivityResponse{}
+	mi := &file_stockpb_stock_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetActivityResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActivityResponse) ProtoMessage() {}
+
+func (x *GetActivityResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stockpb_stock_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActivityResponse.ProtoReflect.Descriptor instead.
+func (*GetActivityResponse) Descriptor() ([]byte, []int) {
+	return file_stockpb_stock_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetActivityResponse) GetActivityID() string {
+	if x != nil {
+		return x.ActivityID
+	}
+	return ""
+}
+
+func (x *GetActivityResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetActivityResponse) GetProductID() string {
+	if x != nil {
+		return x.ProductID
+	}
+	return ""
+}
+
+func (x *GetActivityResponse) GetTotalStock() int32 {
+	if x != nil {
+		return x.TotalStock
+	}
+	return 0
+}
+
+func (x *GetActivityResponse) GetStartTimeUnix() int64 {
+	if x != nil {
+		return x.StartTimeUnix
+	}
+	return 0
+}
+
+func (x *GetActivityResponse) GetEndTimeUnix() int64 {
+	if x != nil {
+		return x.EndTimeUnix
+	}
+	return 0
+}
+
+func (x *GetActivityResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *GetActivityResponse) GetWarmupDone() bool {
+	if x != nil {
+		return x.WarmupDone
+	}
+	return false
+}
+
 var File_stockpb_stock_proto protoreflect.FileDescriptor
 
 const file_stockpb_stock_proto_rawDesc = "" +
@@ -470,9 +823,49 @@ const file_stockpb_stock_proto_rawDesc = "" +
 	"\x0fConfirmResponse\"*\n" +
 	"\x0eReleaseRequest\x12\x18\n" +
 	"\aOrderID\x18\x01 \x01(\tR\aOrderID\"\x11\n" +
-	"\x0fReleaseResponse2\xe2\x02\n" +
+	"\x0fReleaseResponse\"\xb1\x01\n" +
+	"\x15CreateActivityRequest\x12\x12\n" +
+	"\x04Name\x18\x01 \x01(\tR\x04Name\x12\x1c\n" +
+	"\tProductID\x18\x02 \x01(\tR\tProductID\x12\x1e\n" +
+	"\n" +
+	"TotalStock\x18\x03 \x01(\x05R\n" +
+	"TotalStock\x12$\n" +
+	"\rStartTimeUnix\x18\x04 \x01(\x03R\rStartTimeUnix\x12 \n" +
+	"\vEndTimeUnix\x18\x05 \x01(\x03R\vEndTimeUnix\"8\n" +
+	"\x16CreateActivityResponse\x12\x1e\n" +
+	"\n" +
+	"ActivityID\x18\x01 \x01(\tR\n" +
+	"ActivityID\"7\n" +
+	"\x15WarmUpActivityRequest\x12\x1e\n" +
+	"\n" +
+	"ActivityID\x18\x01 \x01(\tR\n" +
+	"ActivityID\"2\n" +
+	"\x16WarmUpActivityResponse\x12\x18\n" +
+	"\aSkipped\x18\x01 \x01(\bR\aSkipped\"4\n" +
+	"\x12GetActivityRequest\x12\x1e\n" +
+	"\n" +
+	"ActivityID\x18\x01 \x01(\tR\n" +
+	"ActivityID\"\x87\x02\n" +
+	"\x13GetActivityResponse\x12\x1e\n" +
+	"\n" +
+	"ActivityID\x18\x01 \x01(\tR\n" +
+	"ActivityID\x12\x12\n" +
+	"\x04Name\x18\x02 \x01(\tR\x04Name\x12\x1c\n" +
+	"\tProductID\x18\x03 \x01(\tR\tProductID\x12\x1e\n" +
+	"\n" +
+	"TotalStock\x18\x04 \x01(\x05R\n" +
+	"TotalStock\x12$\n" +
+	"\rStartTimeUnix\x18\x05 \x01(\x03R\rStartTimeUnix\x12 \n" +
+	"\vEndTimeUnix\x18\x06 \x01(\x03R\vEndTimeUnix\x12\x16\n" +
+	"\x06Status\x18\a \x01(\tR\x06Status\x12\x1e\n" +
+	"\n" +
+	"WarmupDone\x18\b \x01(\bR\n" +
+	"WarmupDone2\xd2\x04\n" +
 	"\fStockService\x12?\n" +
-	"\bGetItems\x12\x18.stockpb.GetItemsRequest\x1a\x19.stockpb.GetItemsResponse\x12W\n" +
+	"\bGetItems\x12\x18.stockpb.GetItemsRequest\x1a\x19.stockpb.GetItemsResponse\x12Q\n" +
+	"\x0eCreateActivity\x12\x1e.stockpb.CreateActivityRequest\x1a\x1f.stockpb.CreateActivityResponse\x12Q\n" +
+	"\x0eWarmUpActivity\x12\x1e.stockpb.WarmUpActivityRequest\x1a\x1f.stockpb.WarmUpActivityResponse\x12H\n" +
+	"\vGetActivity\x12\x1b.stockpb.GetActivityRequest\x1a\x1c.stockpb.GetActivityResponse\x12W\n" +
 	"\x10WarmUpFlashStock\x12 .stockpb.WarmUpFlashStockRequest\x1a!.stockpb.WarmUpFlashStockResponse\x12<\n" +
 	"\aReserve\x12\x17.stockpb.ReserveRequest\x1a\x18.stockpb.ReserveResponse\x12<\n" +
 	"\aConfirm\x12\x17.stockpb.ConfirmRequest\x1a\x18.stockpb.ConfirmResponse\x12<\n" +
@@ -490,7 +883,7 @@ func file_stockpb_stock_proto_rawDescGZIP() []byte {
 	return file_stockpb_stock_proto_rawDescData
 }
 
-var file_stockpb_stock_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_stockpb_stock_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_stockpb_stock_proto_goTypes = []any{
 	(*GetItemsRequest)(nil),          // 0: stockpb.GetItemsRequest
 	(*GetItemsResponse)(nil),         // 1: stockpb.GetItemsResponse
@@ -502,25 +895,37 @@ var file_stockpb_stock_proto_goTypes = []any{
 	(*ConfirmResponse)(nil),          // 7: stockpb.ConfirmResponse
 	(*ReleaseRequest)(nil),           // 8: stockpb.ReleaseRequest
 	(*ReleaseResponse)(nil),          // 9: stockpb.ReleaseResponse
-	(*orderpb.Item)(nil),             // 10: orderpb.Item
-	(*orderpb.ItemWithQuantity)(nil), // 11: orderpb.ItemWithQuantity
+	(*CreateActivityRequest)(nil),    // 10: stockpb.CreateActivityRequest
+	(*CreateActivityResponse)(nil),   // 11: stockpb.CreateActivityResponse
+	(*WarmUpActivityRequest)(nil),    // 12: stockpb.WarmUpActivityRequest
+	(*WarmUpActivityResponse)(nil),   // 13: stockpb.WarmUpActivityResponse
+	(*GetActivityRequest)(nil),       // 14: stockpb.GetActivityRequest
+	(*GetActivityResponse)(nil),      // 15: stockpb.GetActivityResponse
+	(*orderpb.Item)(nil),             // 16: orderpb.Item
+	(*orderpb.ItemWithQuantity)(nil), // 17: orderpb.ItemWithQuantity
 }
 var file_stockpb_stock_proto_depIdxs = []int32{
-	10, // 0: stockpb.GetItemsResponse.Items:type_name -> orderpb.Item
-	11, // 1: stockpb.WarmUpFlashStockRequest.Items:type_name -> orderpb.ItemWithQuantity
-	11, // 2: stockpb.ReserveRequest.Items:type_name -> orderpb.ItemWithQuantity
+	16, // 0: stockpb.GetItemsResponse.Items:type_name -> orderpb.Item
+	17, // 1: stockpb.WarmUpFlashStockRequest.Items:type_name -> orderpb.ItemWithQuantity
+	17, // 2: stockpb.ReserveRequest.Items:type_name -> orderpb.ItemWithQuantity
 	0,  // 3: stockpb.StockService.GetItems:input_type -> stockpb.GetItemsRequest
-	2,  // 4: stockpb.StockService.WarmUpFlashStock:input_type -> stockpb.WarmUpFlashStockRequest
-	4,  // 5: stockpb.StockService.Reserve:input_type -> stockpb.ReserveRequest
-	6,  // 6: stockpb.StockService.Confirm:input_type -> stockpb.ConfirmRequest
-	8,  // 7: stockpb.StockService.Release:input_type -> stockpb.ReleaseRequest
-	1,  // 8: stockpb.StockService.GetItems:output_type -> stockpb.GetItemsResponse
-	3,  // 9: stockpb.StockService.WarmUpFlashStock:output_type -> stockpb.WarmUpFlashStockResponse
-	5,  // 10: stockpb.StockService.Reserve:output_type -> stockpb.ReserveResponse
-	7,  // 11: stockpb.StockService.Confirm:output_type -> stockpb.ConfirmResponse
-	9,  // 12: stockpb.StockService.Release:output_type -> stockpb.ReleaseResponse
-	8,  // [8:13] is the sub-list for method output_type
-	3,  // [3:8] is the sub-list for method input_type
+	10, // 4: stockpb.StockService.CreateActivity:input_type -> stockpb.CreateActivityRequest
+	12, // 5: stockpb.StockService.WarmUpActivity:input_type -> stockpb.WarmUpActivityRequest
+	14, // 6: stockpb.StockService.GetActivity:input_type -> stockpb.GetActivityRequest
+	2,  // 7: stockpb.StockService.WarmUpFlashStock:input_type -> stockpb.WarmUpFlashStockRequest
+	4,  // 8: stockpb.StockService.Reserve:input_type -> stockpb.ReserveRequest
+	6,  // 9: stockpb.StockService.Confirm:input_type -> stockpb.ConfirmRequest
+	8,  // 10: stockpb.StockService.Release:input_type -> stockpb.ReleaseRequest
+	1,  // 11: stockpb.StockService.GetItems:output_type -> stockpb.GetItemsResponse
+	11, // 12: stockpb.StockService.CreateActivity:output_type -> stockpb.CreateActivityResponse
+	13, // 13: stockpb.StockService.WarmUpActivity:output_type -> stockpb.WarmUpActivityResponse
+	15, // 14: stockpb.StockService.GetActivity:output_type -> stockpb.GetActivityResponse
+	3,  // 15: stockpb.StockService.WarmUpFlashStock:output_type -> stockpb.WarmUpFlashStockResponse
+	5,  // 16: stockpb.StockService.Reserve:output_type -> stockpb.ReserveResponse
+	7,  // 17: stockpb.StockService.Confirm:output_type -> stockpb.ConfirmResponse
+	9,  // 18: stockpb.StockService.Release:output_type -> stockpb.ReleaseResponse
+	11, // [11:19] is the sub-list for method output_type
+	3,  // [3:11] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -537,7 +942,7 @@ func file_stockpb_stock_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_stockpb_stock_proto_rawDesc), len(file_stockpb_stock_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
