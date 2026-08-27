@@ -101,7 +101,8 @@ func (s *cancelOrder) Cancel(ctx context.Context, in CancelInput) (bool, error) 
 		return false, errors.Wrap(txErr, "cancel: mongo update")
 	}
 
-	// 阶段 2: stock.Release。best-effort —— Release 失败只记日志, stock 侧 zombie 扫描兜底。
+	// 阶段 2: stock.Release。best-effort —— Release 失败只记日志,order 侧 reconcile worker 兜底
+	// (见 internal/order/infra/reconcile/worker.go)。
 	if didCancel {
 		if relErr := s.stock.Release(ctx, in.OrderID); relErr != nil {
 			logging.Errorf(ctx, nil, "cancel: stock.Release failed orderID=%s err=%v (will be reconciled)", in.OrderID, relErr)

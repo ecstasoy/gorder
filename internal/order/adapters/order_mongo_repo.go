@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"time"
 
 	_ "github.com/ecstasoy/gorder/common/config"
 	"github.com/ecstasoy/gorder/common/entity"
@@ -14,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	mongoopts "go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 var (
@@ -154,6 +156,42 @@ func (r *OrderRepositoryMongo) Update(ctx context.Context, o *domain.Order, upda
 	})
 
 	return
+}
+
+// ListTerminalOlderThan 见 domain.Repository 注释。利用 ObjectID 时间戳前缀,
+// 不依赖额外字段。返回的 Order 只填充基础字段 (ID / CustomerID / Status),足
+// 够 reconcile worker 决定下一步 (Confirm / Release) 即可。
+func (r *OrderRepositoryMongo) ListTerminalOlderThan(ctx context.Context, cutoff time.Time, limit int64) ([]*domain.Order, error) {
+	cutoffID := primitive.NewObjectIDFromTimestamp(cutoff)
+	filter := bson.M{
+		"_id": bson.M{"$lt": cutoffID},
+		"status": bson.M{"$in": []string{
+			orderpb.OrderStatus_ORDER_STATUS_PAID.String(),
+			orderpb.OrderStatus_ORDER_STATUS_CANCELLED.String(),
+		}},
+	}
+	opts := mongoopts.Find().
+		SetLimit(limit).
+		SetSort(bson.D{{Key: "_id", Value: 1}})
+
+	cursor, err := r.collection().Find(ctx, filter, opts)
+	if err != nil {
+		return nil, errors.Wrap(err, "ListTerminalOlderThan: find")
+	}
+	defer func() {
+		_ = cursor.Close(ctx)
+	}()
+
+	var rows []orderModel
+	if err := cursor.All(ctx, &rows); err != nil {
+		return nil, errors.Wrap(err, "ListTerminalOlderThan: decode")
+	}
+
+	out := make([]*domain.Order, 0, len(rows))
+	for i := range rows {
+		out = append(out, r.unmarshal(&rows[i]))
+	}
+	return out, nil
 }
 
 func (r *OrderRepositoryMongo) marshalToModel(order *domain.Order) *orderModel {

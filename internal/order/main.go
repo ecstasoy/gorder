@@ -11,8 +11,10 @@ import (
 	"github.com/ecstasoy/gorder/common/logging"
 	"github.com/ecstasoy/gorder/common/server"
 	"github.com/ecstasoy/gorder/common/tracing"
+	"github.com/ecstasoy/gorder/order/adapters"
 	"github.com/ecstasoy/gorder/order/infra/consumer"
 	"github.com/ecstasoy/gorder/order/infra/outbox"
+	"github.com/ecstasoy/gorder/order/infra/reconcile"
 	"github.com/ecstasoy/gorder/order/ports"
 	"github.com/ecstasoy/gorder/order/service"
 	"github.com/gin-gonic/gin"
@@ -37,7 +39,7 @@ func main() {
 	}
 	defer shutdown(ctx)
 
-	application, stockGRPC, redisClient, outboxRepo, cleanup := service.NewApplication(ctx)
+	application, stockGRPC, redisClient, outboxRepo, mongoClient, cleanup := service.NewApplication(ctx)
 	defer cleanup()
 
 	conn, ch, closeCh := broker.Connect(
@@ -80,6 +82,21 @@ func main() {
 	outboxPublisher := broker.NewRabbitMQPublisher(outboxCh)
 	outboxWorker := outbox.NewWorker(outboxRepo, outboxPublisher)
 	go outboxWorker.Run(ctx)
+
+	// ADR-0001 "后续工作 #5": reservation 对账 worker。saga 在 stock.Confirm /
+	// stock.Release 失败时只记日志, worker 周期性扫已到终态的孤儿订单并补调
+	// 对应 op。Confirm / Release 本身幂等, 重复扫已对账的也是 no-op。
+	reconcileWorker := reconcile.NewWorker(
+		adapters.NewOrderRepositoryMongo(mongoClient),
+		stockGRPC,
+		reconcile.Config{
+			Interval:   viper.GetDuration("order.reconcile.interval"),
+			MinAge:     viper.GetDuration("order.reconcile.min-age"),
+			MaxAge:     viper.GetDuration("order.reconcile.max-age"),
+			BatchLimit: viper.GetInt64("order.reconcile.batch-limit"),
+		},
+	)
+	go reconcileWorker.Run(ctx)
 
 	deregisterFunc, err := discovery.RegisterToConsul(ctx, serviceName)
 
