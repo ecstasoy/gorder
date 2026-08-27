@@ -28,15 +28,19 @@ const CollectionName = "order_outbox"
 // 事务里完成；后台 worker 拉取、发送、标记 sent。Payload 是已经 JSON 序列化
 // 的事件 body —— worker 直接转发，不再做二次编码。
 type Record struct {
-	MongoID   bson.ObjectID `bson:"_id"`
-	EventID   string             `bson:"event_id"` // 下游用它去重 (at-least-once 投递)
-	Dest      string             `bson:"dest"`     // queue 名 或 exchange 名 (Kind=Delayed 时忽略)
-	Kind      string             `bson:"kind"`
-	Payload   []byte             `bson:"payload"` // 已 JSON 序列化的事件 body
-	Status    string             `bson:"status"`
-	Attempts  int                `bson:"attempts"`
-	CreatedAt time.Time          `bson:"created_at"`
-	UpdatedAt time.Time          `bson:"updated_at"`
-	SentAt    *time.Time         `bson:"sent_at,omitempty"`
-	LastError string             `bson:"last_error,omitempty"`
+	MongoID bson.ObjectID `bson:"_id"`
+	EventID string        `bson:"event_id"` // 下游用它去重 (at-least-once 投递)
+	Dest    string        `bson:"dest"`     // queue 名 或 exchange 名 (Kind=Delayed 时忽略)
+	Kind    string        `bson:"kind"`
+	Payload []byte        `bson:"payload"` // 已 JSON 序列化的事件 body
+	// TraceContext 持久化下单请求的分布式追踪上下文 (W3C traceparent / b3 等)。
+	// worker 异步发布时用它续接原始 trace,避免在 RabbitMQ 边界断裂成新 root span。
+	// 写入见 outboxAppenderAdapter.Append,读取见 worker.dispatch。
+	TraceContext map[string]string `bson:"trace_context,omitempty"`
+	Status       string            `bson:"status"`
+	Attempts     int               `bson:"attempts"`
+	CreatedAt    time.Time         `bson:"created_at"`
+	UpdatedAt    time.Time         `bson:"updated_at"`
+	SentAt       *time.Time        `bson:"sent_at,omitempty"`
+	LastError    string            `bson:"last_error,omitempty"`
 }
