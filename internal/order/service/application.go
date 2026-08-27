@@ -121,16 +121,36 @@ type outboxAppenderAdapter struct {
 }
 
 func (a *outboxAppenderAdapter) Append(ctx context.Context, records []domainsvc.OutboxRecord) error {
+	// 捕获当前请求的 trace context,持久化到每条 outbox 记录 —— worker 异步发布时
+	// 用它续接原始 trace,避免在 RabbitMQ 边界断裂成新 root span (G-3)。同一批
+	// 记录同属一个请求/span,共享同一份 trace context。
+	traceCtx := stringHeaderMap(broker.InjectRabbitMQHeaders(ctx))
 	converted := make([]outbox.Record, len(records))
 	for i, r := range records {
 		converted[i] = outbox.Record{
-			EventID: r.EventID,
-			Dest:    r.Dest,
-			Kind:    r.Kind,
-			Payload: r.Payload,
+			EventID:      r.EventID,
+			Dest:         r.Dest,
+			Kind:         r.Kind,
+			Payload:      r.Payload,
+			TraceContext: traceCtx,
 		}
 	}
 	return a.repo.Append(ctx, converted)
+}
+
+// stringHeaderMap 把 propagator 注入的 header (值恒为 string) 收窄成
+// map[string]string,便于持久化到 Mongo。无活跃 span 时返回 nil。
+func stringHeaderMap(h map[string]any) map[string]string {
+	if len(h) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(h))
+	for k, v := range h {
+		if s, ok := v.(string); ok {
+			m[k] = s
+		}
+	}
+	return m
 }
 
 // mongoTxRunner 实现 domainsvc.TxRunner —— 把 Mongo session/transaction 藏在

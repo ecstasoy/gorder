@@ -90,6 +90,16 @@ func (w *Worker) process(ctx context.Context, rec *Record) {
 }
 
 func (w *Worker) dispatch(ctx context.Context, rec *Record) error {
+	// 从持久化的 trace context 续接原始下单 trace,让异步发布挂在原 trace 下,
+	// 而不是新开 root span (G-3)。publisher 内部会把这份 ctx 注入 AMQP header,
+	// 下游消费者 Extract 后即成为原 trace 的子 span。
+	if len(rec.TraceContext) > 0 {
+		headers := make(map[string]any, len(rec.TraceContext))
+		for k, v := range rec.TraceContext {
+			headers[k] = v
+		}
+		ctx = broker.ExtractRabbitMQHeaders(ctx, headers)
+	}
 	event := broker.DomainEvent{
 		Dest: rec.Dest,
 		// json.RawMessage 的 MarshalJSON 直接输出原 bytes，Publisher 内部 json.Marshal
