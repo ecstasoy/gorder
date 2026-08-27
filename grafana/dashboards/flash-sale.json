@@ -1,0 +1,149 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Flash Reserve — outcomes per second",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(rate(gorder_flash_reserve_total[1m])) by (result)",
+        "legendFormat": "{{result}}"
+      }],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"drawStyle": "line", "fillOpacity": 20, "stacking": {"mode": "normal"}}},
+        "overrides": []
+      },
+      "options": {"legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}}
+    },
+    {
+      "id": 2,
+      "title": "Flash Reserve — latency percentiles",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.50, sum(rate(gorder_flash_reserve_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50"},
+        {"refId": "B", "expr": "histogram_quantile(0.90, sum(rate(gorder_flash_reserve_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p90"},
+        {"refId": "C", "expr": "histogram_quantile(0.99, sum(rate(gorder_flash_reserve_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "Consumer — flash order outcomes per second",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(rate(gorder_flash_order_total[1m])) by (result)",
+        "legendFormat": "{{result}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"stacking": {"mode": "normal"}}}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "Consumer — handling latency (by result)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.50, sum(rate(gorder_flash_order_duration_seconds_bucket[5m])) by (le, result))", "legendFormat": "p50 {{result}}"},
+        {"refId": "B", "expr": "histogram_quantile(0.99, sum(rate(gorder_flash_order_duration_seconds_bucket[5m])) by (le, result))", "legendFormat": "p99 {{result}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "⚠️ Oversell detector (1h increase — must stay 0)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 16},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(increase(gorder_flash_order_total{result=\"insufficient_stock\"}[1h]))"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "red", "value": 1}
+          ]},
+          "color": {"mode": "thresholds"},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {"graphMode": "area", "colorMode": "background", "textMode": "auto"}
+    },
+    {
+      "id": 6,
+      "title": "Compensations fired (1h increase)",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 16},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(increase(gorder_stock_restore_total[1h])) by (reason)",
+        "legendFormat": "{{reason}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 1}
+          ]},
+          "color": {"mode": "thresholds"}
+        },
+        "overrides": []
+      },
+      "options": {"colorMode": "background"}
+    },
+    {
+      "id": 7,
+      "title": "MySQL DeductStock — outcome breakdown",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 16},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(rate(gorder_stock_deduct_total[1m])) by (result)",
+        "legendFormat": "{{result}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
+    },
+    {
+      "id": 8,
+      "title": "RabbitMQ consumer — ack/nack rate",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 22},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(rate(gorder_rabbitmq_consume_total[1m])) by (queue, result)",
+        "legendFormat": "{{queue}} — {{result}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["gorder", "flash-sale"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Flash Sale",
+  "uid": "flash-sale",
+  "version": 1,
+  "weekStart": ""
+}

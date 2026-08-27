@@ -1,0 +1,107 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 0,
+  "id": null,
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP — requests per second (by path)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(rate(http_requests_total[1m])) by (path)",
+        "legendFormat": "{{path}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
+    },
+    {
+      "id": 2,
+      "title": "HTTP — error rate % (5xx / total)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{
+        "refId": "A",
+        "expr": "100 * sum(rate(http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1)",
+        "legendFormat": "5xx %"
+      }],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0}, "overrides": []}
+    },
+    {
+      "id": 3,
+      "title": "HTTP — latency p50 / p99 (by path)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path))", "legendFormat": "p50 {{path}}"},
+        {"refId": "B", "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path))", "legendFormat": "p99 {{path}}"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 4,
+      "title": "CQRS command — throughput by handler",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(rate(gorder_command_total[1m])) by (handler, status)",
+        "legendFormat": "{{handler}} {{status}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
+    },
+    {
+      "id": 5,
+      "title": "CQRS command — p99 by handler",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{
+        "refId": "A",
+        "expr": "histogram_quantile(0.99, sum(rate(gorder_command_duration_seconds_bucket[5m])) by (le, handler))",
+        "legendFormat": "{{handler}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 6,
+      "title": "CQRS query — throughput by handler",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 24},
+      "targets": [{
+        "refId": "A",
+        "expr": "sum(rate(gorder_query_total[1m])) by (handler, status)",
+        "legendFormat": "{{handler}} {{status}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
+    },
+    {
+      "id": 7,
+      "title": "Go runtime — goroutines (by service)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "gorder-prom"},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 24},
+      "targets": [{
+        "refId": "A",
+        "expr": "go_goroutines",
+        "legendFormat": "{{job}}"
+      }],
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []}
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["gorder", "platform"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "timezone": "browser",
+  "title": "Platform Overview",
+  "uid": "platform-overview",
+  "version": 1
+}

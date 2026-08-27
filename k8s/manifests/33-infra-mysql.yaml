@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: gorder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8
+          args:
+            - "--default-time-zone=+00:00"
+          env:
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: "yes"
+            - name: MYSQL_ROOT_PASSWORD
+              value: root
+            - name: MYSQL_USER
+              value: user
+            - name: MYSQL_PASSWORD
+              value: password
+            - name: TZ
+              value: UTC
+          ports:
+            - name: mysql
+              containerPort: 3306
+          volumeMounts:
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+          resources:
+            requests: { memory: "512Mi", cpu: "200m" }
+            limits:   { memory: "1.5Gi", cpu: "1500m" }
+      volumes:
+        - name: init-sql
+          configMap:
+            name: mysql-init-sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: gorder
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
