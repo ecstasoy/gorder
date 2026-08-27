@@ -131,7 +131,7 @@ func createPaymentTimeoutQueue(ch *amqp.Channel) error {
 	return err
 }
 
-func createDLX(ch *amqp.Channel) interface{} {
+func createDLX(ch *amqp.Channel) error {
 	q, err := ch.QueueDeclare("share_queue", true, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("failed to declare order.mq queue: %w", err)
